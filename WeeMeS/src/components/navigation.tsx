@@ -78,28 +78,6 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
             })}
           </div>
         </nav>
-        
-        {/* Bottom section */}
-        <div className="p-4 border-t border-border">
-          <div className="px-4 py-3 rounded-lg bg-gradient-to-br from-primary-50 to-accent-50 border border-primary-200/50">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-primary-700">Goals Progress</p>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary-100 text-primary-700">On Track</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1.5 bg-primary-200 rounded-full overflow-hidden">
-                <motion.div 
-                  className="h-full bg-gradient-to-r from-primary-600 to-accent-500"
-                  initial={{ width: 0 }}
-                  animate={{ width: "58%" }}
-                  transition={{ duration: 1, delay: 0.5 }}
-                />
-              </div>
-              <span className="text-xs text-primary-700">58%</span>
-            </div>
-            <p className="text-xs text-secondary-500 mt-2">5 active goals</p>
-          </div>
-        </div>
       </div>
 
       {/* Mobile Bottom Navigation */}

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Avatar, AvatarFallback } from "../ui/avatar";
-import { Switch } from "../ui/switch";
+import { Input } from "../ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,15 +15,14 @@ import {
 } from "../ui/alert-dialog";
 import { 
   User, 
-  Settings, 
-  Bell, 
   Shield, 
-  CreditCard, 
-  FileText, 
   LogOut,
   ChevronRight,
-  Award
+  Award,
+  Lock
 } from "lucide-react";
+import { fetchDashboardSummary, fetchGoalsTracking, changePassword, type DashboardSummary, type GoalTrackingItem } from "../../service/handler";
+import { toast } from "sonner";
 
 interface ProfilePageProps {
   onLogout?: () => void;
@@ -32,6 +31,36 @@ interface ProfilePageProps {
 
 export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [showChangePwd, setShowChangePwd] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
+  const [curPwd, setCurPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+
+  const profile = useMemo(() => {
+    if (userData) return userData;
+    try { return JSON.parse(localStorage.getItem('userData') || 'null') || {}; } catch { return {}; }
+  }, [userData]);
+
+  const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
+  const [activeGoals, setActiveGoals] = useState<number | null>(null);
+
+  useEffect(() => {
+    const customerId: string | undefined = profile?.customerId;
+    if (!customerId) return;
+    (async () => {
+      try {
+        const [sum, tracking] = await Promise.all([
+          fetchDashboardSummary(customerId),
+          fetchGoalsTracking(customerId),
+        ]);
+        if (sum?.success && sum.data) setPortfolioValue(Number((sum.data as DashboardSummary).totalValue ?? 0));
+        if (tracking?.success && Array.isArray(tracking.data)) setActiveGoals((tracking.data as GoalTrackingItem[]).length);
+      } catch {
+        // leave as nulls on failure
+      }
+    })();
+  }, [profile?.customerId]);
 
   const handleLogoutClick = () => {
     setShowLogoutDialog(true);
@@ -45,12 +74,7 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
   };
 
   const menuItems = [
-    { icon: User, label: 'Personal Information', hasChevron: true },
-    { icon: Bell, label: 'Notifications', hasSwitch: true, enabled: true },
-    { icon: Shield, label: 'Security & Privacy', hasChevron: true },
-    { icon: CreditCard, label: 'Payment Methods', hasChevron: true },
-    { icon: FileText, label: 'Statements & Reports', hasChevron: true },
-    { icon: Settings, label: 'App Preferences', hasChevron: true },
+    { icon: Lock, label: 'Change Password', hasChevron: true },
   ];
 
   return (
@@ -64,9 +88,11 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
             </AvatarFallback>
           </Avatar>
           <div className="flex-1">
-            <h2>Sarah Johnson</h2>
-            <p className="text-sm text-muted-foreground">sarah.johnson@email.com</p>
-            <p className="text-xs text-muted-foreground">Premium Member since 2021</p>
+            <h2>{profile?.name || '-'}</h2>
+            <p className="text-sm text-muted-foreground">{profile?.email || '-'}</p>
+            {profile?.memberSince && (
+              <p className="text-xs text-muted-foreground">Member since {profile.memberSince}</p>
+            )}
           </div>
           <Button variant="outline" size="sm">
             Edit
@@ -107,11 +133,11 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
         <h3 className="mb-3">Account Overview</h3>
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 bg-muted/50 rounded-lg text-center">
-            <div className="font-semibold">$2.8M</div>
+            <div className="font-semibold">{portfolioValue == null ? '-' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(portfolioValue)}</div>
             <div className="text-xs text-muted-foreground">Portfolio Value</div>
           </div>
           <div className="p-3 bg-muted/50 rounded-lg text-center">
-            <div className="font-semibold">4</div>
+            <div className="font-semibold">{activeGoals == null ? '-' : activeGoals}</div>
             <div className="text-xs text-muted-foreground">Active Goals</div>
           </div>
           <div className="p-3 bg-muted/50 rounded-lg text-center">
@@ -136,18 +162,15 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
               <div 
                 key={index}
                 className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg cursor-pointer transition-colors"
+                onClick={() => {
+                  if (item.label === 'Change Password') setShowChangePwd(true);
+                }}
               >
                 <div className="flex items-center gap-3">
                   <Icon className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm">{item.label}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {item.hasSwitch && (
-                    <Switch 
-                      checked={item.enabled} 
-                      className="scale-75" 
-                    />
-                  )}
                   {item.hasChevron && (
                     <ChevronRight className="w-4 h-4 text-muted-foreground" />
                   )}
@@ -158,26 +181,58 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
         </div>
       </Card>
 
-      {/* Support */}
-      <Card className="p-4">
-        <h3 className="mb-3">Support</h3>
-        <div className="space-y-2">
-          <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-3">
-            <FileText className="w-4 h-4" />
-            <div className="text-left">
-              <div className="text-sm">Help Center</div>
-              <div className="text-xs text-muted-foreground">Get help and support</div>
+      {/* Change Password Placeholder Dialog */}
+      <AlertDialog open={showChangePwd} onOpenChange={(open) => { setShowChangePwd(open); if (!open) { setCurPwd(""); setNewPwd(""); setConfirmPwd(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Password</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will trigger a password change for your account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs text-muted-foreground">Current Password</label>
+              <Input type="password" value={curPwd} onChange={(e) => setCurPwd(e.target.value)} className="mt-1" />
             </div>
-          </Button>
-          <Button variant="ghost" className="w-full justify-start gap-3 h-auto p-3">
-            <Settings className="w-4 h-4" />
-            <div className="text-left">
-              <div className="text-sm">Contact Support</div>
-              <div className="text-xs text-muted-foreground">Reach out to our team</div>
+            <div>
+              <label className="text-xs text-muted-foreground">New Password</label>
+              <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} className="mt-1" />
             </div>
-          </Button>
-        </div>
-      </Card>
+            <div>
+              <label className="text-xs text-muted-foreground">Confirm New Password</label>
+              <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)} className="mt-1" />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (changingPwd) return;
+                const customerId: string | undefined = profile?.customerId;
+                if (!customerId) { toast.error('Missing customer id'); return; }
+                if (!curPwd || !newPwd || !confirmPwd) { toast.error('Please fill all fields'); return; }
+                if (newPwd !== confirmPwd) { toast.error('New password confirmation does not match'); return; }
+                setChangingPwd(true);
+                try {
+                  const token = localStorage.getItem('authToken') || undefined;
+                  const resp = await changePassword(customerId, { currentPassword: curPwd, newPassword: newPwd, confirmNewPassword: confirmPwd }, token);
+                  if (resp?.success) {
+                    toast.success(resp.messages?.join(', ') || 'Change password triggered');
+                    setShowChangePwd(false);
+                  } else {
+                    toast.error(resp?.messages?.join(', ') || 'Failed to change password');
+                  }
+                } catch (e: any) {
+                  toast.error(e?.message || 'Failed to change password');
+                } finally {
+                  setChangingPwd(false);
+                }
+              }}
+            >{changingPwd ? 'Processing...' : 'Continue'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Logout */}
       <Card className="p-4">

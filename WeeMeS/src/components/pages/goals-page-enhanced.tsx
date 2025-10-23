@@ -6,7 +6,7 @@ import { Badge } from "../ui/badge";
 import { Plus, Target, TrendingUp, Lightbulb, Calculator } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
-import { fetchGoalsList, fetchGoalDetail, type GoalsListItem } from "../../service/handler";
+import { fetchGoalsList, fetchGoalDetail, type GoalsListItem, fetchGoalsTracking, type GoalTrackingItem } from "../../service/handler";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface Goal {
@@ -27,6 +27,7 @@ export function GoalsPageEnhanced() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<GoalsListItem | null>(null);
+  const [trackingList, setTrackingList] = useState<GoalTrackingItem[]>([]);
 
   useEffect(() => {
     const ud = JSON.parse(localStorage.getItem('userData') || 'null');
@@ -34,25 +35,48 @@ export function GoalsPageEnhanced() {
     if (!userId) return;
     (async () => {
       try {
-        const resp = await fetchGoalsList(userId);
-        if (resp.success && Array.isArray(resp.data)) {
-          const mapped: Goal[] = (resp.data as GoalsListItem[]).map((g) => {
-            const year = parseInt(g.targetDate?.slice(0, 4) || '0');
-            const month = parseInt(g.targetDate?.slice(5, 7) || '12');
+        // Prefer tracking endpoint to get progress
+        const tracking = await fetchGoalsTracking(userId);
+        if (tracking.success && Array.isArray(tracking.data)) {
+          const mapped: Goal[] = (tracking.data as GoalTrackingItem[]).map((t) => {
+            const year = parseInt(t.targetDate?.slice(0, 4) || '0');
+            const month = parseInt(t.targetDate?.slice(5, 7) || '12');
             return {
-              id: g.goalId,
-              name: g.goalName,
-              targetAmount: Number(g.targetAmount || 0),
-              currentAmount: 0,
+              id: t.goalId,
+              name: t.goalName,
+              targetAmount: Number(t.targetAmount || 0),
+              currentAmount: Number(t.actualValueToDate || 0),
               monthlyContribution: 0,
               targetYear: year,
               targetMonth: month,
-              category: g.goalType,
+              category: t.goalType,
             };
           });
           setGoals(mapped);
+          setTrackingList(tracking.data as GoalTrackingItem[]);
         } else {
-          toast.error(resp.messages?.join(', ') || 'Failed to fetch goals');
+          // Fallback to listGoals if tracking not available
+          const resp = await fetchGoalsList(userId);
+          if (resp.success && Array.isArray(resp.data)) {
+            const mapped: Goal[] = (resp.data as GoalsListItem[]).map((g) => {
+              const year = parseInt(g.targetDate?.slice(0, 4) || '0');
+              const month = parseInt(g.targetDate?.slice(5, 7) || '12');
+              return {
+                id: g.goalId,
+                name: g.goalName,
+                targetAmount: Number(g.targetAmount || 0),
+                currentAmount: 0,
+                monthlyContribution: 0,
+                targetYear: year,
+                targetMonth: month,
+                category: g.goalType,
+              };
+            });
+            setGoals(mapped);
+            setTrackingList([]);
+          } else {
+            toast.error(resp.messages?.join(', ') || 'Failed to fetch goals');
+          }
         }
       } catch (err: any) {
         toast.error(err?.message || 'Failed to fetch goals');
@@ -183,12 +207,12 @@ export function GoalsPageEnhanced() {
                       <div className="h-2 bg-secondary-200 rounded-full overflow-hidden">
                         <div 
                           className={`h-full transition-all bg-primary/40`}
-                          style={{ width: `${Math.min(progress, 100)}%` }}
+                          style={{ width: `${Math.min(progress, 100)}%`, ...(progress > 0 ? { minWidth: '2px' } : {}) }}
                         />
                       </div>
                       <div className="flex justify-between text-[11px] text-secondary-500">
-                        <span>Rp {(goal.currentAmount / 1000000).toFixed(0)}M</span>
-                        <span>Rp {(goal.targetAmount / 1000000).toFixed(0)}M</span>
+                        <span>{new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(goal.currentAmount)}</span>
+                        <span>{new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 }).format(goal.targetAmount)}</span>
                       </div>
                     </div>
 
@@ -271,6 +295,29 @@ export function GoalsPageEnhanced() {
                   {detailData.goalType}
                 </Badge>
               </div>
+
+              {/* Status from tracking */}
+              {(() => {
+                const info = trackingList.find(t => t.goalId === detailData.goalId);
+                if (!info) return null;
+                const isOn = String(info.status).toUpperCase() === 'ON_TRACK';
+                return (
+                  <div className={`p-3 rounded-md border ${isOn ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm">
+                        <span className="text-secondary-600 mr-2">Status</span>
+                        <span className={isOn ? 'text-green-700' : 'text-amber-700'}>{info.status}</span>
+                      </div>
+                      <Badge variant="outline" className={isOn ? 'text-green-700 border-green-200' : 'text-amber-700 border-amber-200'}>
+                        {isOn ? 'On Track' : 'Needs Attention'}
+                      </Badge>
+                    </div>
+                    {info.statusMessage && (
+                      <div className="mt-2 text-xs text-secondary-700">{info.statusMessage}</div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Highlight cards */}
               <div className="grid grid-cols-2 gap-3">

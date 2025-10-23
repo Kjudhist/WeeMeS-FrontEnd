@@ -227,7 +227,51 @@ export async function fetchGoalDetail(userId: string, goalId: string, token?: st
   return fetchJson<GoalDetail>(path, { method: 'GET', headers: { 'X-User-Id': userId } }, token);
 }
 
-// Simulation APIs (8084)
+// Goals tracking (gateway)
+export interface GoalTrackingItem {
+  goalId: string;
+  goalType: string;
+  goalName: string;
+  createdDate: string;
+  targetDate: string;
+  targetAmount: number;
+  expectedValueToDate: number;
+  actualValueToDate: number;
+  shortfallPct: number;
+  status: string; // ON_TRACK | OFF_TRACK | etc
+  statusMessage?: string;
+}
+
+export async function fetchGoalsTracking(userId: string, token?: string) {
+  const headers = { 'X-User-Id': userId } as Record<string, string>;
+  try {
+    const single = await fetchJson<GoalTrackingItem[]>(`/v1/goals/trackingGoals`, { method: 'GET', headers }, token);
+    if (single?.success) return single;
+  } catch {}
+  // Retry with double slash variant if gateway expects it
+  return fetchJson<GoalTrackingItem[]>(`/v1/goals//trackingGoals`, { method: 'GET', headers }, token);
+}
+
+// Dashboard APIs (gateway)
+export interface DashboardSummary {
+  totalValue: number;
+  breakdown: Array<{ productId: string; units: number; nav: number; value: number }>;
+}
+
+export async function fetchDashboardSummary(customerId: string, token?: string) {
+  const path = `/v1/dashboard/summary?customerId=${encodeURIComponent(customerId)}`;
+  return fetchJson<DashboardSummary>(path, { method: 'GET' }, token);
+}
+
+export interface DashboardTrendPoint { date: string; value: number }
+export interface DashboardTrend { points: DashboardTrendPoint[] }
+
+export async function fetchDashboardTrend(customerId: string, days = 30, token?: string) {
+  const path = `/v1/dashboard/trend?customerId=${encodeURIComponent(customerId)}&days=${encodeURIComponent(String(days))}`;
+  return fetchJson<DashboardTrend>(path, { method: 'GET' }, token);
+}
+
+
 export interface SimulationProjection { month: number; date: string; value: number; progress: number; }
 export interface SimulationResponse {
   goalId?: string | null;
@@ -268,5 +312,15 @@ export async function simulateOtherGoal(userId: string, req: CreateOtherGoalReq,
     method: 'POST',
     headers: { 'X-User-Id': userId },
     body: JSON.stringify(req),
+  }, token);
+}
+
+// Auth: change password (gateway)
+export async function changePassword(userId: string, body: { currentPassword: string; newPassword: string; confirmNewPassword: string }, token?: string) {
+  const path = `/v1/auth/change-password`;
+  return fetchJson<unknown>(path, {
+    method: 'POST',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(body),
   }, token);
 }

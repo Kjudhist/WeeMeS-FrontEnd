@@ -7,6 +7,7 @@ import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import logo from '../../assets/Logo.png';
 import { motion } from "motion/react";
 import { login as loginSvc } from "../../service/handler";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => void;
@@ -22,6 +23,7 @@ export function LoginPage({ onLogin, onBack, onSignUp, onKYCNeeded, onDashboard 
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,9 +154,9 @@ export function LoginPage({ onLogin, onBack, onSignUp, onKYCNeeded, onDashboard 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-sm">Password</Label>
-                <a href="#" className="text-xs text-primary-600 hover:text-primary-700 transition-colors">
+                <button type="button" onClick={() => setShowForgot(true)} className="text-xs text-primary-600 hover:text-primary-700 transition-colors">
                   Forgot?
-                </a>
+                </button>
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary-400" />
@@ -212,6 +214,16 @@ export function LoginPage({ onLogin, onBack, onSignUp, onKYCNeeded, onDashboard 
             </p>
           </div>
         </Card>
+        <Dialog open={showForgot} onOpenChange={setShowForgot}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Forgot Password</DialogTitle>
+            </DialogHeader>
+            <div className="text-sm text-secondary-700">
+              please contact our Customer Service to change your password
+            </div>
+          </DialogContent>
+        </Dialog>
       </motion.div>
     </div>
   );
