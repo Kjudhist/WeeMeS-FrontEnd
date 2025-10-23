@@ -5,6 +5,10 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card } from "./ui/card";
 import { motion, AnimatePresence } from "motion/react";
+import { createRetirementGoal, createOtherGoal, simulateRetirementGoal, simulateOtherGoal, type SimulationResponse } from "../service/handler";
+import { toast } from "sonner";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import { 
   Target, 
   Home, 
@@ -46,6 +50,11 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
   const [lifeExpectancy, setLifeExpectancy] = useState('');
   const [monthlyNeeds, setMonthlyNeeds] = useState('');
 
+  // Simulation state
+  const [simLoading, setSimLoading] = useState(false);
+  const [simError, setSimError] = useState<string | null>(null);
+  const [simData, setSimData] = useState<SimulationResponse | null>(null);
+
   // Populate form when editing
   useEffect(() => {
     if (editGoal && open) {
@@ -80,6 +89,9 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
     setInitialInvestment('');
     setLifeExpectancy('');
     setMonthlyNeeds('');
+    setSimData(null);
+    setSimError(null);
+    setSimLoading(false);
   };
 
   const handleClose = () => {
@@ -113,54 +125,120 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
     setGoalName(categoryNames[cat]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const baseGoal = {
-      id: isEditMode ? editGoal.id : Date.now().toString(),
-      title: goalName,
-      deadline: targetYear,
-      category: goalType === 'retirement' ? 'Retirement' : category.charAt(0).toUpperCase() + category.slice(1),
-      initialInvestment: initialInvestment ? parseFloat(initialInvestment) : 0,
-    };
+    try {
+      const ud = JSON.parse(localStorage.getItem('userData') || 'null');
+      const userId: string | undefined = ud?.customerId;
+      if (!userId) {
+        toast.error('User ID not found. Please login again.');
+        return;
+      }
 
-    if (goalType === 'retirement') {
-      // Calculate retirement target based on years after retirement and monthly needs
-      const retirementYears = parseInt(lifeExpectancy);
-      const monthsOfRetirement = retirementYears * 12;
-      const calculatedTarget = parseFloat(monthlyNeeds) * monthsOfRetirement;
-      
-      const goal = {
-        ...baseGoal,
-        target: calculatedTarget,
-        current: parseFloat(initialInvestment) || 0,
-        retirementDetails: {
-          yearsAfterRetirement: parseInt(lifeExpectancy),
-          monthlyNeeds: parseFloat(monthlyNeeds),
-          retirementYear: parseInt(targetYear)
+      // If there's no simulation yet, run simulation first
+      if (!simData) {
+        setSimLoading(true);
+        setSimError(null);
+        try {
+          if (goalType === 'retirement') {
+            const payload = {
+              goalType: 'RETIREMENT',
+              goalName: goalName,
+              targetAge: parseInt(targetYear),
+              hopeLife: parseInt(lifeExpectancy),
+              monthlyExpense: parseFloat(monthlyNeeds),
+            };
+            const resp = await simulateRetirementGoal(userId, payload);
+            if (resp.success) {
+              setSimData(resp.data);
+              toast.success('Simulation generated');
+            } else {
+              setSimError(resp.messages?.join(', ') || 'Failed to simulate');
+              toast.error(resp.messages?.join(', ') || 'Failed to simulate');
+            }
+          } else {
+            const payload = {
+              goalType: 'OTHER',
+              goalName: goalName,
+              targetYear: parseInt(targetYear),
+              targetAmount: parseFloat(targetAmount),
+            };
+            const resp = await simulateOtherGoal(userId, payload);
+            if (resp.success) {
+              setSimData(resp.data);
+              toast.success('Simulation generated');
+            } else {
+              setSimError(resp.messages?.join(', ') || 'Failed to simulate');
+              toast.error(resp.messages?.join(', ') || 'Failed to simulate');
+            }
+          }
+        } catch (err: any) {
+          setSimError(err?.message || 'Failed to simulate');
+          toast.error(err?.message || 'Failed to simulate');
+        } finally {
+          setSimLoading(false);
         }
-      };
-      
-      if (isEditMode && onEditGoal) {
-        onEditGoal(goal);
-      } else {
-        onAddGoal(goal);
+        return; // stop here; user will review chart then click Save Goal
       }
-    } else {
-      const goal = {
-        ...baseGoal,
-        target: parseFloat(targetAmount),
-        current: parseFloat(initialInvestment) || 0,
-      };
-      
-      if (isEditMode && onEditGoal) {
-        onEditGoal(goal);
-      } else {
-        onAddGoal(goal);
-      }
-    }
 
-    handleClose();
+      // If simulation already exists, proceed to save goal
+      if (goalType === 'retirement') {
+        // API: createdGoalsRetirement
+        const payload = {
+          goalType: 'RETIREMENT',
+          goalName: goalName,
+          targetAge: parseInt(targetYear),
+          hopeLife: parseInt(lifeExpectancy),
+          monthlyExpense: parseFloat(monthlyNeeds),
+        };
+        const resp = await createRetirementGoal(userId, payload);
+        if (resp.success) {
+          toast.success('Retirement goal created');
+          // Update UI list optimistically
+          onAddGoal?.({
+            id: resp.data?.id || Date.now().toString(),
+            title: goalName,
+            target: payload.monthlyExpense * (payload.hopeLife * 12),
+            current: parseFloat(initialInvestment) || 0,
+            deadline: targetYear,
+            category: 'Retirement',
+            retirementDetails: {
+              yearsAfterRetirement: payload.hopeLife,
+              monthlyNeeds: payload.monthlyExpense,
+              retirementYear: parseInt(targetYear)
+            }
+          });
+          handleClose();
+        } else {
+          toast.error(resp.messages?.join(', ') || 'Failed to create retirement goal');
+        }
+      } else {
+        // API: createdGoalsOther
+        const payload = {
+          goalType: 'OTHER',
+          goalName: goalName,
+          targetYear: parseInt(targetYear),
+          targetAmount: parseFloat(targetAmount),
+        };
+        const resp = await createOtherGoal(userId, payload);
+        if (resp.success) {
+          toast.success('Goal created');
+          onAddGoal?.({
+            id: resp.data?.id || Date.now().toString(),
+            title: goalName,
+            target: payload.targetAmount,
+            current: parseFloat(initialInvestment) || 0,
+            deadline: targetYear,
+            category: (category.charAt(0).toUpperCase() + category.slice(1))
+          });
+          handleClose();
+        } else {
+          toast.error(resp.messages?.join(', ') || 'Failed to create goal');
+        }
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to create goal');
+    }
   };
 
   const otherGoalCategories = [
@@ -327,20 +405,20 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
 
                 {goalType === 'retirement' ? (
                   <>
-                    {/* Retirement Year */}
+                    {/* Target Age */}
                     <div className="space-y-2">
-                      <Label htmlFor="retirementYear" className="flex items-center gap-2">
+                      <Label htmlFor="targetAge" className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-primary" />
-                        Target Retirement Year
+                        Target Age
                       </Label>
                       <Input
-                        id="retirementYear"
+                        id="targetAge"
                         type="number"
                         value={targetYear}
                         onChange={(e) => setTargetYear(e.target.value)}
-                        placeholder="e.g., 2045"
-                        min={new Date().getFullYear()}
-                        max={new Date().getFullYear() + 50}
+                        placeholder="e.g., 60"
+                        min={18}
+                        max={100}
                         required
                         className="transition-all duration-300 focus:scale-[1.01]"
                       />
@@ -390,23 +468,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
                       </p>
                     </div>
 
-                    {/* Calculated Target Display */}
-                    {targetYear && lifeExpectancy && monthlyNeeds && (
-                      <Card className="p-4 bg-primary-50/50 dark:bg-primary-900/20 border-primary/20">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm">
-                            <TrendingUp className="w-4 h-4 text-primary" />
-                            <span className="text-muted-foreground">Calculated Target Amount:</span>
-                          </div>
-                          <div className="text-2xl text-primary">
-                            Rp {(parseFloat(monthlyNeeds) * (parseInt(lifeExpectancy) * 12)).toLocaleString('id-ID')}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Based on {parseInt(lifeExpectancy)} years × 12 months × Rp {parseFloat(monthlyNeeds).toLocaleString('id-ID')}/month
-                          </p>
-                        </div>
-                      </Card>
-                    )}
+                    
                   </>
                 ) : (
                   <>
@@ -450,6 +512,63 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
                   </>
                 )}
 
+                {/* Simulation Preview */}
+                <div className="space-y-3">
+                  {simLoading && (
+                    <Card className="p-4"><p className="text-sm text-secondary-600">Running simulation...</p></Card>
+                  )}
+                  {simError && (
+                    <Card className="p-4 border-destructive/30"><p className="text-sm text-destructive">{simError}</p></Card>
+                  )}
+                  {simData && (
+                    <Card className="p-4">
+                      <h4 className="mb-2">Projection Preview</h4>
+                      <ChartContainer
+                        config={{ value: { label: 'Portfolio Value', color: 'hsl(var(--primary))' } }}
+                        className="w-full h-64"
+                      >
+                        <LineChart data={simData.projections} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
+                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                          <XAxis
+                            dataKey="date"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={4}
+                            interval={Math.max(1, Math.floor((simData.projections?.length || 0) / 6))}
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(v: string) => (v ? v.slice(0, 4) : '')}
+                          />
+                          <YAxis
+                            width={80}
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(v: number) => v.toLocaleString('id-ID')}
+                          />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="#0ea5e9"
+                            strokeOpacity={1}
+                            dot={{ r: 4, stroke: '#0ea5e9', fill: '#0ea5e9' }}
+                            activeDot={{ r: 6, stroke: '#0ea5e9', fill: '#0ea5e9' }}
+                            strokeWidth={4}
+                            connectNulls
+                          />
+                        </LineChart>
+                      </ChartContainer>
+                      {Array.isArray(simData.projections) && simData.projections.length < 2 && (
+                        <p className="mt-2 text-xs text-secondary-600">Only one projection point available.</p>
+                      )}
+                      {simData.assumptions?.requiredMonthlyContribution !== undefined && (
+                        <p className="mt-3 text-sm text-secondary-700">
+                          Required Monthly Contribution: Rp {Number(simData.assumptions.requiredMonthlyContribution).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                        </p>
+                      )}
+                    </Card>
+                  )}
+                </div>
+
                 {isEditMode && (
                   <Card className="p-4 bg-accent-50/50 dark:bg-accent-900/20 border-accent/30">
                     <p className="text-sm text-muted-foreground">
@@ -472,8 +591,13 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
                     className="flex-1 gap-2"
                   >
                     <Target className="w-4 h-4" />
-                    {isEditMode ? 'Update Goal' : 'Create Goal'}
+                    {simData ? (isEditMode ? 'Update Goal' : 'Save Goal') : 'Simulate'}
                   </Button>
+                  {simData && (
+                    <Button type="button" variant="ghost" className="flex-1" onClick={() => { setSimData(null); setSimError(null); }}>
+                      Adjust Inputs
+                    </Button>
+                  )}
                 </div>
               </form>
             </motion.div>

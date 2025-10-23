@@ -4,16 +4,19 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
-import logo from 'figma:asset/5be61660b702baf053a25ca30a76685e3f38b680.png';
+import logo from '../../assets/Logo.png';
 import { motion } from "motion/react";
+import { login as loginSvc } from "../../service/handler";
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => void;
   onBack: () => void;
   onSignUp: () => void;
+  onKYCNeeded: () => void;
+  onDashboard: () => void;
 }
 
-export function LoginPage({ onLogin, onBack, onSignUp }: LoginPageProps) {
+export function LoginPage({ onLogin, onBack, onSignUp, onKYCNeeded, onDashboard }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -26,43 +29,36 @@ export function LoginPage({ onLogin, onBack, onSignUp }: LoginPageProps) {
     setError("");
 
     try {
-      const response = await fetch("http://localhost:8080/v1/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+      const resp = await loginSvc(email, password);
 
-      const data = await response.json();
+      if (resp.success) {
+        const custData = resp.data || {};
 
-      if (data.success) {
-        // Store token and user data in localStorage
-        localStorage.setItem("authToken", data.data.token);
-        localStorage.setItem("userData", JSON.stringify(data.data));
+        // Store auth and user info in localStorage (full payload)
+        localStorage.setItem("authToken", custData.token || "");
+        localStorage.setItem("userName", custData.name ?? "");
+        localStorage.setItem("userEmail", custData.email ?? "");
+        // Compose userData with flags and risk profile
+        const userData = {
+          customerId: custData.customerId,
+          name: custData.name,
+          email: custData.email,
+          kycComplete: Boolean(custData.kycComplete),
+          crpComplete: Boolean(custData.crpComplete),
+          riskProfile: custData.riskProfileType ?? null,
+        };
+        localStorage.setItem("userData", JSON.stringify(userData));
 
-        // Check KYC status
-        const kycResponse = await fetch("http://localhost:8080/v1/kyc/status", {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${data.data.token}`,
-          },
-        });
-
-        const kycData = await kycResponse.json();
-
-        if (kycData.data.kycStatus === "INCOMPLETE") {
-          // Redirect to KYC page
-          window.location.href = "/kyc";
+        // Route based on kycComplete; only mark authenticated when going to dashboard
+        if (userData.kycComplete) {
+          localStorage.setItem("isAuthenticated", "true");
+          onDashboard();
         } else {
-          // Redirect to dashboard or another page
-          window.location.href = "/dashboard";
+          localStorage.setItem("isAuthenticated", "false");
+          onKYCNeeded();
         }
       } else {
-        setError(data.messages.join(", "));
+        setError(resp.messages?.join(", ") || "Login failed");
       }
     } catch (error) {
       console.error("Login error:", error);

@@ -1,5 +1,5 @@
-import { Home, Target, Building, TrendingUp, User, ArrowLeftRight, Calculator } from "lucide-react";
-import logo from 'figma:asset/5be61660b702baf053a25ca30a76685e3f38b680.png';
+import { Home, Target, Building, User, ArrowLeftRight } from "lucide-react";
+import logo from '../assets/Logo.png';
 import { motion } from "motion/react";
 
 interface NavigationProps {
@@ -12,9 +12,7 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
     { id: 'home', label: 'Home', icon: Home },
     { id: 'goals', label: 'Goals', icon: Target },
     { id: 'portfolio', label: 'Portfolio', icon: Building },
-    { id: 'transactions', label: 'Transactions', icon: ArrowLeftRight },
-    { id: 'simulation', label: 'Simulator', icon: Calculator },
-    { id: 'analytics', label: 'Analytics', icon: TrendingUp },
+    { id: 'history', label: 'History', icon: ArrowLeftRight },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 

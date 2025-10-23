@@ -6,10 +6,10 @@ import { Label } from "../ui/label";
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Progress } from "../ui/progress";
 import { CreditCard, MapPin, ArrowRight, Check, Shield } from "lucide-react";
-import logo from 'figma:asset/5be61660b702baf053a25ca30a76685e3f38b680.png';
+import logo from '../../assets/Logo.png';
 import { motion, AnimatePresence } from "motion/react";
 import { Textarea } from "../ui/textarea";
-import { useNavigate } from "react-router-dom";
+import { saveKYC, validateCRPAnswers, saveCRPAnswers, normalizeRisk } from "../../service/handler";
 
 interface Question {
   questionId: string;
@@ -42,7 +42,6 @@ export function KYCPage({ onComplete }: KYCPageProps) {
   const [riskProfile, setRiskProfile] = useState<string | null>(null);
   const [insight, setInsight] = useState<string | null>(null);
 
-  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -74,7 +73,6 @@ export function KYCPage({ onComplete }: KYCPageProps) {
   const handleKYCSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setStep(2);
-    onComplete({ nik, address, dob, pob, answers });
   };
 
   const handleAnswerSelect = (questionId: string, answerId: string) => {
@@ -98,33 +96,63 @@ export function KYCPage({ onComplete }: KYCPageProps) {
 
     try {
       const token = localStorage.getItem("authToken");
-      const response = await fetch("http://localhost:8080/v1/crp/answers/validate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          answers: Object.entries(answers).map(([questionId, answerId]) => ({
-            questionId,
-            answerId,
-          })),
-        }),
-      });
+      if (!token) {
+        throw new Error("Missing auth token. Please log in again.");
+      }
 
-      const data = await response.json();
+      // Convert DOB from DD/MM/YYYY to YYYY-MM-DD (backend format)
+      const dobIso = (() => {
+        const m = dob.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        return dob; // if already ISO, send as-is
+      })();
 
-      if (data.success) {
-        setRiskProfile(data.data.riskProfileName);
-        setInsight(data.data.insight);
-        navigate("/risk-profile-result", {
-          state: {
-            riskProfile: data.data.riskProfileName,
-            insight: data.data.insight,
-          },
-        });
+      // 1) Save KYC identity
+      const kycResp = await saveKYC({ nik, pob, dob: dobIso }, token);
+      if (!kycResp?.success) {
+        setError(kycResp?.messages?.join(", ") || "Failed to submit KYC.");
+        return;
+      }
+      // Prefer risk profile coming from KYC response if available
+      const kycRiskProfileName = kycResp?.data?.riskProfileName ?? kycResp?.data?.riskProfile?.riskProfileName;
+      const kycRiskProfileId = kycResp?.data?.riskProfileId ?? kycResp?.data?.riskProfile?.riskProfileId;
+      const kycInsight = kycResp?.data?.insight;
+
+      // 2) Validate CRP answers
+      const answersArr = Object.entries(answers).map(([questionId, answerId]) => ({ questionId, answerId }));
+      const crpValidateResp = await validateCRPAnswers(answersArr, token);
+      if (crpValidateResp?.success) {
+        const crpValidateInsight = crpValidateResp?.data?.insight;
+        // Persist CRP answers
+        const crpSaveResp = await saveCRPAnswers(answersArr, token);
+        if (crpSaveResp?.success) {
+          const crpRiskProfileName = crpSaveResp?.data?.riskProfileName ?? crpSaveResp?.data?.riskProfile?.riskProfileName;
+          const crpRiskProfileId = crpSaveResp?.data?.riskProfileId ?? crpSaveResp?.data?.riskProfile?.riskProfileId;
+          const crpInsight = crpSaveResp?.data?.insight;
+
+          const rawName = kycRiskProfileName ?? crpRiskProfileName;
+          const riskProfileName = normalizeRisk(rawName);
+          const riskProfileId = riskProfileName ? (kycRiskProfileId ?? crpRiskProfileId) : undefined;
+          const insightText = kycInsight ?? crpInsight ?? crpValidateInsight;
+
+          setRiskProfile(riskProfileName || '');
+          setInsight(insightText ?? null);
+          onComplete({
+            nik,
+            address,
+            dob,
+            pob,
+            answers,
+            kycStatus: kycResp?.data?.kycStatus,
+            riskProfileId,
+            riskProfile: riskProfileName,
+            insight: insightText,
+          });
+        } else {
+          setError(crpSaveResp?.messages?.join(", ") || "Failed to save CRP answers.");
+        }
       } else {
-        setError("Failed to submit answers.");
+        setError(crpValidateResp?.messages?.join(", ") || "Failed to validate CRP answers.");
       }
     } catch (error) {
       console.error("Error submitting answers:", error);
@@ -344,7 +372,7 @@ export function KYCPage({ onComplete }: KYCPageProps) {
                           className="flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer hover:border-primary-300 transition-all hover:bg-primary-50/30"
                         >
                           <RadioGroupItem
-                            value={index.toString()}
+                            value={option.answerId}
                             id={`q${currentQuestion}-opt${index}`}
                             className="mt-0.5"
                           />

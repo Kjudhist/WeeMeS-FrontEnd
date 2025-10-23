@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AddGoalDialog } from "../add-goal-dialog";
-import { WhatIfSimulator } from "../what-if-simulator";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Plus, Target, TrendingUp, Lightbulb, Calculator } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
+import { fetchGoalsList, fetchGoalDetail, type GoalsListItem } from "../../service/handler";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 
 interface Goal {
   id: string;
@@ -22,48 +23,42 @@ interface Goal {
 export function GoalsPageEnhanced() {
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [selectedGoalForInsights, setSelectedGoalForInsights] = useState<string | null>(null);
-  const [goals, setGoals] = useState<Goal[]>([
-    {
-      id: "1",
-      name: "Emergency Fund",
-      currentAmount: 45000000,
-      targetAmount: 60000000,
-      monthlyContribution: 2000000,
-      targetYear: 2025,
-      targetMonth: 12,
-      category: "Safety"
-    },
-    {
-      id: "2", 
-      name: "Retirement Fund",
-      currentAmount: 850000000,
-      targetAmount: 1500000000,
-      monthlyContribution: 5000000,
-      targetYear: 2040,
-      targetMonth: 12,
-      category: "Retirement"
-    },
-    {
-      id: "3",
-      name: "Vacation Home",
-      currentAmount: 180000000,
-      targetAmount: 400000000,
-      monthlyContribution: 3000000,
-      targetYear: 2026,
-      targetMonth: 12,
-      category: "Property"
-    },
-    {
-      id: "4",
-      name: "Children's Education",
-      currentAmount: 95000000,
-      targetAmount: 200000000,
-      monthlyContribution: 2500000,
-      targetYear: 2030,
-      targetMonth: 6,
-      category: "Education"
-    }
-  ]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailData, setDetailData] = useState<GoalsListItem | null>(null);
+
+  useEffect(() => {
+    const ud = JSON.parse(localStorage.getItem('userData') || 'null');
+    const userId: string | undefined = ud?.customerId;
+    if (!userId) return;
+    (async () => {
+      try {
+        const resp = await fetchGoalsList(userId);
+        if (resp.success && Array.isArray(resp.data)) {
+          const mapped: Goal[] = (resp.data as GoalsListItem[]).map((g) => {
+            const year = parseInt(g.targetDate?.slice(0, 4) || '0');
+            const month = parseInt(g.targetDate?.slice(5, 7) || '12');
+            return {
+              id: g.goalId,
+              name: g.goalName,
+              targetAmount: Number(g.targetAmount || 0),
+              currentAmount: 0,
+              monthlyContribution: 0,
+              targetYear: year,
+              targetMonth: month,
+              category: g.goalType,
+            };
+          });
+          setGoals(mapped);
+        } else {
+          toast.error(resp.messages?.join(', ') || 'Failed to fetch goals');
+        }
+      } catch (err: any) {
+        toast.error(err?.message || 'Failed to fetch goals');
+      }
+    })();
+  }, []);
 
   const selectedGoal = selectedGoalForInsights 
     ? goals.find(g => g.id === selectedGoalForInsights) 
@@ -104,58 +99,13 @@ export function GoalsPageEnhanced() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <Card className="p-4 bg-gradient-to-br from-primary-50 to-primary-100/30 border-primary-200">
-          <div className="flex items-center gap-2 mb-2">
-            <Target className="w-4 h-4 text-primary-700" />
+        <Card className="p-4 bg-background border-border">
+          <div className="flex items-center gap-2 mb-1.5">
+            <Target className="w-4 h-4 text-primary" />
             <span className="text-xs text-secondary-600">Total Goals</span>
           </div>
-          <div className="text-foreground">{goals.length}</div>
+          <div className="text-foreground text-lg">{goals.length}</div>
           <div className="text-xs text-secondary-500">Active</div>
-        </Card>
-        
-        <Card className="p-4 bg-gradient-to-br from-success/10 to-success/5 border-success/20">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-success" />
-            <span className="text-xs text-secondary-600">On Track</span>
-          </div>
-          <div className="text-success">
-            {goals.filter(g => {
-              const remaining = g.targetAmount - g.currentAmount;
-              const monthsRemaining = (g.targetYear - new Date().getFullYear()) * 12 + 
-                (g.targetMonth - (new Date().getMonth() + 1));
-              const required = monthsRemaining > 0 ? remaining / monthsRemaining : remaining;
-              return g.monthlyContribution >= required;
-            }).length}
-          </div>
-          <div className="text-xs text-secondary-500">Goals</div>
-        </Card>
-
-        <Card className="p-4 bg-gradient-to-br from-accent-50 to-accent-100/30 border-accent-200">
-          <div className="flex items-center gap-2 mb-2">
-            <Lightbulb className="w-4 h-4 text-accent-700" />
-            <span className="text-xs text-secondary-600">Avg Progress</span>
-          </div>
-          <div className="text-accent-700">
-            {Math.round(goals.reduce((sum, g) => sum + (g.currentAmount / g.targetAmount * 100), 0) / goals.length)}%
-          </div>
-          <div className="text-xs text-secondary-500">Complete</div>
-        </Card>
-
-        <Card className="p-4 bg-gradient-to-br from-warning/10 to-warning/5 border-warning/20">
-          <div className="flex items-center gap-2 mb-2">
-            <Target className="w-4 h-4 text-warning" />
-            <span className="text-xs text-secondary-600">Needs Action</span>
-          </div>
-          <div className="text-warning">
-            {goals.filter(g => {
-              const remaining = g.targetAmount - g.currentAmount;
-              const monthsRemaining = (g.targetYear - new Date().getFullYear()) * 12 + 
-                (g.targetMonth - (new Date().getMonth() + 1));
-              const required = monthsRemaining > 0 ? remaining / monthsRemaining : remaining;
-              return g.monthlyContribution < required;
-            }).length}
-          </div>
-          <div className="text-xs text-secondary-500">Goals</div>
         </Card>
       </div>
 
@@ -195,48 +145,55 @@ export function GoalsPageEnhanced() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
                 >
-                  <Card className={`p-5 border-l-4 transition-shadow hover:shadow-lg ${
-                    isOnTrack ? 'border-l-success bg-success/5' : 'border-l-warning bg-warning/5'
-                  }`}>
+                  <Card onClick={async () => {
+                    try {
+                      const ud = JSON.parse(localStorage.getItem('userData') || 'null');
+                      const userId: string | undefined = ud?.customerId;
+                      if (!userId) return;
+                      setDetailLoading(true);
+                      setDetailOpen(true);
+                      const detail = await fetchGoalDetail(userId, goal.id);
+                      if (detail.success) {
+                        setDetailData(detail.data as any);
+                      } else {
+                        toast.error(detail.messages?.join(', ') || 'Failed to load goal');
+                      }
+                    } catch (e: any) {
+                      toast.error(e?.message || 'Failed to load goal');
+                    } finally {
+                      setDetailLoading(false);
+                    }
+                  }} className={`p-3 border border-secondary-200 bg-secondary-50 cursor-pointer transition-all hover:shadow-md hover:border-primary/40`}>
                     {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-foreground">{goal.name}</h3>
-                          <Badge variant="outline" className={`${
-                            isOnTrack ? 'text-success border-success/20' : 'text-warning border-warning/20'
-                          }`}>
-                            {isOnTrack ? 'On Track' : 'Off Track'}
-                          </Badge>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <h3 className="text-foreground text-sm">{goal.name}</h3>
                         </div>
-                        <p className="text-xs text-secondary-500">{goal.category} • Target: {goal.targetMonth}/{goal.targetYear}</p>
+                        <p className="text-[11px] text-secondary-500">{goal.category} • Target: {goal.targetMonth}/{goal.targetYear}</p>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm text-primary-700">{progress.toFixed(1)}%</div>
-                        <div className="text-xs text-secondary-500">Complete</div>
+                        <div className="text-xs text-primary-700">{progress.toFixed(1)}%</div>
+                        <div className="text-[11px] text-secondary-500">Complete</div>
                       </div>
                     </div>
 
                     {/* Progress Bar */}
-                    <div className="space-y-2 mb-4">
+                    <div className="space-y-1.5 mb-2">
                       <div className="h-2 bg-secondary-200 rounded-full overflow-hidden">
                         <div 
-                          className={`h-full transition-all ${
-                            isOnTrack 
-                              ? 'bg-gradient-to-r from-success to-success/80'
-                              : 'bg-gradient-to-r from-warning to-warning/80'
-                          }`}
+                          className={`h-full transition-all bg-primary/40`}
                           style={{ width: `${Math.min(progress, 100)}%` }}
                         />
                       </div>
-                      <div className="flex justify-between text-xs text-secondary-500">
+                      <div className="flex justify-between text-[11px] text-secondary-500">
                         <span>Rp {(goal.currentAmount / 1000000).toFixed(0)}M</span>
                         <span>Rp {(goal.targetAmount / 1000000).toFixed(0)}M</span>
                       </div>
                     </div>
 
                     {/* Inline Insights Box */}
-                    <div className={`p-3 rounded-lg ${
+                    <div className={`hidden p-3 rounded-lg ${
                       isOnTrack ? 'bg-success/10 border border-success/20' : 'bg-warning/10 border border-warning/20'
                     }`}>
                       <div className="flex items-start gap-2">
@@ -257,7 +214,7 @@ export function GoalsPageEnhanced() {
                       </div>
                       
                       {/* Quick Stats */}
-                      <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-current/10">
+                      <div className="hidden grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-current/10">
                         <div>
                           <div className="text-xs text-secondary-500">Monthly</div>
                           <div className="text-sm">Rp {(goal.monthlyContribution / 1000000).toFixed(1)}M</div>
@@ -273,7 +230,7 @@ export function GoalsPageEnhanced() {
                       </div>
 
                       {/* What-If Simulator */}
-                      <div className="mt-3 pt-3 border-t border-current/10">
+                      <div className="hidden mt-3 pt-3 border-t border-current/10">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -291,25 +248,61 @@ export function GoalsPageEnhanced() {
             })}
           </div>
         )}
-
-        {/* What-If Simulator Modal/Expanded View */}
-        {selectedGoal && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <WhatIfSimulator 
-              goal={selectedGoal}
-              onApplyChanges={(newContribution) => {
-                handleApplyWhatIfChanges(selectedGoal.id, newContribution);
-                setSelectedGoalForInsights(null);
-                
-              }}
-            />
-          </motion.div>
-        )}
       </div>
+
+      {/* Detail Popup */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Goal Detail</DialogTitle>
+          </DialogHeader>
+          {detailLoading && (
+            <div className="text-sm text-secondary-600">Loading...</div>
+          )}
+          {!detailLoading && detailData && (
+            <div className="space-y-4">
+              {/* Header summary */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-sm text-secondary-600">Goal Name</div>
+                  <div className="text-base font-medium text-foreground">{detailData.goalName}</div>
+                </div>
+                <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                  {detailData.goalType}
+                </Badge>
+              </div>
+
+              {/* Highlight cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <Card className="p-3">
+                  <div className="text-[11px] text-secondary-600">Target Amount</div>
+                  <div className="text-base font-semibold text-primary">Rp {Number(detailData.targetAmount || 0).toLocaleString('id-ID')}</div>
+                </Card>
+                <Card className="p-3">
+                  <div className="text-[11px] text-secondary-600">Target Date</div>
+                  <div className="text-base font-medium">{detailData.targetDate}</div>
+                </Card>
+              </div>
+
+              {/* Meta info */}
+              <div className="grid grid-cols-1 gap-2 border-t pt-3">
+                {detailData.riskProfileId && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-secondary-600">Risk Profile ID</span>
+                    <span className="truncate max-w-[220px] text-right">{detailData.riskProfileId}</span>
+                  </div>
+                )}
+                {detailData.createdAt && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-secondary-600">Created</span>
+                    <span>{new Date(detailData.createdAt).toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Add Goal Dialog */}
       <AddGoalDialog 

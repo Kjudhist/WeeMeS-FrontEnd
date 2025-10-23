@@ -4,9 +4,7 @@ import { Navigation } from "./components/navigation";
 import { HomePage } from "./components/pages/home-page";
 import { GoalsPageEnhanced } from "./components/pages/goals-page-enhanced";
 import { PortfolioPage } from "./components/pages/portfolio-page";
-import { TransactionsPage } from "./components/pages/transactions-page";
-import { SimulationPage } from "./components/pages/simulation-page";
-import { AnalyticsPage } from "./components/pages/analytics-page";
+import { HistoryPage } from "./components/pages/history-page";
 import { ProfilePage } from "./components/pages/profile-page";
 import { LoginPage } from "./components/pages/login-page";
 import { RegisterPage } from "./components/pages/register-page";
@@ -18,18 +16,12 @@ import { toast } from "sonner";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home');
-  const [isDark, setIsDark] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [showKYC, setShowKYC] = useState(false);
   const [showRiskProfileResult, setShowRiskProfileResult] = useState(false);
   const [userData, setUserData] = useState<any>(null);
-
-  useEffect(() => {
-    const isDarkMode = document.documentElement.classList.contains('dark');
-    setIsDark(isDarkMode);
-  }, []);
 
   useEffect(() => {
     // Check if user is already authenticated and retrieve user data from local storage
@@ -45,17 +37,9 @@ export default function App() {
     }
   }, []);
 
-  const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    if (newTheme) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
+  
 
-  const handleLogin = (email: string) => {
+  const handleLogin = (email: string, password: string) => {
     // In a real app, you would validate credentials here
     // For demo purposes, we'll just accept any input
     console.log('Login attempt:', email);
@@ -73,16 +57,29 @@ export default function App() {
     setUserData(newUserData);
     setShowRegister(false);
     setShowLogin(true); // Redirect to login page
-    toast.success('Account created!', {
-      description: 'Please log in to continue.'
-    });
   };
 
   const handleKYCComplete = (kycData: any) => {
-    // Merge KYC data with user data
-    const completeUserData = { ...userData, ...kycData, riskProfile: kycData.riskProfile || kycData.data?.riskProfileName };
-    console.log('Registration complete:', completeUserData);
+    // Derive risk profile and insight from KYC/CRP responses
+    const riskProfileName =
+      kycData?.riskProfile ||
+      kycData?.riskProfileName ||
+      kycData?.data?.riskProfileName ||
+      userData?.riskProfile;
+    const insight = kycData?.insight || kycData?.data?.insight || userData?.insight;
 
+    // Merge and persist to localStorage
+    const completeUserData = {
+      ...(userData || {}),
+      ...kycData,
+      riskProfile: riskProfileName,
+      insight,
+      kycComplete: true,
+      crpComplete: true,
+    };
+    localStorage.setItem('userData', JSON.stringify(completeUserData));
+
+    // Update state and show result page
     setUserData(completeUserData);
     setShowKYC(false);
     setShowRiskProfileResult(true);
@@ -100,8 +97,7 @@ export default function App() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setUserData(null);
-    localStorage.removeItem('isAuthenticated'); // Clear authentication status
-    localStorage.removeItem('userData'); // Clear user data
+    localStorage.clear(); // Clear all stored data
     setShowLogin(false);
     setShowRegister(false);
     setShowKYC(false);
@@ -119,12 +115,8 @@ export default function App() {
         return <GoalsPageEnhanced />;
       case 'portfolio':
         return <PortfolioPage />;
-      case 'transactions':
-        return <TransactionsPage />;
-      case 'simulation':
-        return <SimulationPage />;
-      case 'analytics':
-        return <AnalyticsPage />;
+      case 'history':
+        return <HistoryPage />;
       case 'profile':
         return <ProfilePage onLogout={handleLogout} userData={userData} />;
       default:
@@ -132,22 +124,23 @@ export default function App() {
     }
   };
 
-  // Show Risk Profile Results page
+  {/* Flow: Show Risk Profile Result */}
   if (showRiskProfileResult && userData?.riskProfile) {
     return (
       <RiskProfileResultPage 
         riskProfile={userData.riskProfile}
+        insight={userData.insight}
         onContinue={handleRiskProfileContinue}
       />
     );
   }
 
-  // Show KYC page if in registration flow
+  {/* Flow: KYC (after login when kycComplete is false) */}
   if (showKYC) {
     return <KYCPage onComplete={handleKYCComplete} />;
   }
 
-  // Show register page
+  {/* Flow: Show Register */}
   if (!isAuthenticated && showRegister) {
     return (
       <RegisterPage 
@@ -160,21 +153,29 @@ export default function App() {
     );
   }
 
-  // Show login page if not authenticated
+  {/* Flow: Show Login if not Authenticaed */}
   if (!isAuthenticated) {
     return (
-      <LoginPage 
+      <LoginPage
         onLogin={handleLogin}
         onBack={() => setShowLogin(false)}
         onSignUp={() => {
           setShowLogin(false);
           setShowRegister(true);
         }}
+        onKYCNeeded={() => {
+          setShowLogin(false);
+          setShowKYC(true);
+        }}
+        onDashboard={() => {
+          setShowLogin(false);
+          setIsAuthenticated(true);
+        }}
       />
     );
   }
 
-  // Show dashboard if authenticated
+  {/* Dashboard Shell */}
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary-50/30">
       {/* Desktop layout with sidebar */}
@@ -186,7 +187,7 @@ export default function App() {
         
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col">
-          <DashboardHeader isDark={isDark} onToggleTheme={toggleTheme} />
+          <DashboardHeader />
           <main className="flex-1 p-6 overflow-auto">
             <AnimatePresence mode="wait">
               <motion.div
@@ -206,7 +207,7 @@ export default function App() {
       {/* Mobile layout */}
       <div className="md:hidden min-h-screen pb-20">
         <div className="max-w-md mx-auto bg-card/95 backdrop-blur-sm shadow-xl min-h-screen">
-          <DashboardHeader isDark={isDark} onToggleTheme={toggleTheme} />
+          <DashboardHeader />
           
           <div className="p-4">
             <AnimatePresence mode="wait">

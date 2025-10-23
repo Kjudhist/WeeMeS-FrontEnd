@@ -1,15 +1,108 @@
-import { PortfolioFull } from "../portfolio-full";
+import { useEffect, useState } from "react";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
-import { Plus, TrendingUp, PieChart, Wallet } from "lucide-react";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import { } from "lucide-react";
+import { fetchProductsByRisk, buyProduct, type ProductItem, type RiskProfile } from "../../service/handler";
+import { toast } from "sonner";
 
 export function PortfolioPage() {
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showBuy, setShowBuy] = useState(false);
+  const [selected, setSelected] = useState<ProductItem | null>(null);
+  const [amount, setAmount] = useState<number>(100000);
+  const [goalId, setGoalId] = useState<string>("");
+
+  const riskFromLocal = (() => {
+    try {
+      const ud = JSON.parse(localStorage.getItem("userData") || "null");
+      return (ud?.riskProfile ?? null) as RiskProfile;
+    } catch {
+      return null;
+    }
+  })();
+
+  useEffect(() => {
+    const risk = riskFromLocal;
+    if (!risk) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const token = localStorage.getItem("authToken") || undefined;
+        const resp = await fetchProductsByRisk(risk, token);
+        if (resp.success) setProducts(resp.data || []);
+        else setError(resp.messages?.join(", ") || "Failed to load products");
+      } catch (e: any) {
+        setError(e?.message || "Failed to load products");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const withinTradingHours = () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    const afterOpen = h > 9 || (h === 9 && m >= 0);
+    const beforeClose = h < 16; // before 16:00
+    return afterOpen && beforeClose;
+  };
+
+  const openBuy = (p: ProductItem) => {
+    setSelected(p);
+    setAmount(100000);
+    // try prefill goalId from localStorage if exists
+    try {
+      const ud = JSON.parse(localStorage.getItem("userData") || "null");
+      if (ud?.lastGoalId) setGoalId(ud.lastGoalId as string);
+    } catch {}
+    setShowBuy(true);
+  };
+
+  const handleBuy = async () => {
+    if (!selected) return;
+    if (!withinTradingHours()) {
+      toast.error("Pembelian hanya bisa dilakukan antara 09:00 - 16:00");
+      return;
+    }
+    try {
+      const token = localStorage.getItem("authToken") || undefined;
+      const ud = JSON.parse(localStorage.getItem("userData") || "{}");
+      const customerId = ud?.customerId || "00000000-0000-0000-0000-000000000000";
+      if (!goalId) {
+        toast.error("Mohon isi Goal ID terlebih dahulu");
+        return;
+      }
+      const resp = await buyProduct({
+        customerId,
+        productId: selected.productId,
+        goalId: goalId,
+        amount: Number(amount) || 0,
+      }, token);
+      if (resp.success) {
+        toast.success("Order placed", { description: "Your buy order has been submitted." });
+        setShowBuy(false);
+      } else {
+        toast.error(resp.messages?.join(", ") || "Buy failed");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Buy failed");
+    }
+  };
+
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('id-ID', {
       style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      currency: 'IDR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   };
 
@@ -20,112 +113,77 @@ export function PortfolioPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-primary-700">Investment Portfolio</h2>
-            <p className="text-sm text-secondary-600">Manage your mutual fund investments</p>
+            <p className="text-sm text-secondary-600">Discover and buy products</p>
           </div>
-          <Button size="sm" className="gap-2 bg-primary-700 hover:bg-primary-800 shadow-md">
-            <Plus className="w-4 h-4" />
-            Add Fund
-          </Button>
         </div>
       </Card>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-        <Card className="p-4 bg-gradient-to-br from-primary-50 to-primary-100/30 border-primary-200">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 rounded-lg bg-primary-200/50">
-              <Wallet className="w-4 h-4 text-primary-700" />
-            </div>
-            <span className="text-xs text-secondary-600">Total Funds</span>
-          </div>
-          <div className="text-foreground">10</div>
-          <div className="text-xs text-secondary-500">Active investments</div>
-        </Card>
-        
-        <Card className="p-4 bg-gradient-to-br from-success/10 to-success/5 border-success/20">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 rounded-lg bg-success/20">
-              <TrendingUp className="w-4 h-4 text-success" />
-            </div>
-            <span className="text-xs text-secondary-600">Avg Return</span>
-          </div>
-          <div className="text-success">+7.8%</div>
-          <div className="text-xs text-secondary-500">This year</div>
-        </Card>
-
-        <Card className="p-4 bg-gradient-to-br from-accent-50 to-accent-100/30 border-accent-200">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 rounded-lg bg-accent-200/50">
-              <PieChart className="w-4 h-4 text-accent-700" />
-            </div>
-            <span className="text-xs text-secondary-600">Best Performer</span>
-          </div>
-          <div className="text-accent-700">+15.6%</div>
-          <div className="text-xs text-secondary-500">Sucorinvest Sharia</div>
-        </Card>
-
-        <Card className="p-4 bg-gradient-to-br from-secondary-50 to-secondary-100/30 border-secondary-200">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-2 rounded-lg bg-secondary-200/50">
-              <Wallet className="w-4 h-4 text-secondary-700" />
-            </div>
-            <span className="text-xs text-secondary-600">Platforms</span>
-          </div>
-          <div className="text-foreground">4</div>
-          <div className="text-xs text-secondary-500">Investment apps</div>
-        </Card>
-      </div>
-
-      {/* Fund Type Distribution */}
+      {/* Recommended Products (by Risk Profile) */}
       <Card className="p-5 md:p-6">
-        <h3 className="mb-4 text-primary-700">Asset Allocation</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="text-center p-4 bg-gradient-to-br from-primary-50 to-primary-100/30 rounded-lg border border-primary-200">
-            <div className="text-primary-700 mb-1">35%</div>
-            <div className="text-xs text-secondary-600">Equity Funds</div>
-          </div>
-          <div className="text-center p-4 bg-gradient-to-br from-accent-50 to-accent-100/30 rounded-lg border border-accent-200">
-            <div className="text-accent-700 mb-1">28%</div>
-            <div className="text-xs text-secondary-600">Fixed Income</div>
-          </div>
-          <div className="text-center p-4 bg-gradient-to-br from-success/10 to-success/5 rounded-lg border border-success/20">
-            <div className="text-success mb-1">26%</div>
-            <div className="text-xs text-secondary-600">Balanced</div>
-          </div>
-          <div className="text-center p-4 bg-gradient-to-br from-secondary-50 to-secondary-100/30 rounded-lg border border-secondary-200">
-            <div className="text-secondary-700 mb-1">11%</div>
-            <div className="text-xs text-secondary-600">Money Market</div>
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-primary-700">Products for You</h3>
+          {riskFromLocal && (
+            <span className="text-xs text-secondary-600">Risk: {riskFromLocal}</span>
+          )}
         </div>
+
+        {loading && <p className="text-sm text-secondary-600">Loading products...</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {!loading && !error && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {products.map((p) => (
+              <Card key={p.productId} className="p-4 border-2 hover:border-primary-300 transition-colors">
+                <div className="mb-2 text-foreground font-medium">{p.productName}</div>
+                <div className="text-xs text-secondary-600 mb-1">{p.productType}</div>
+                <div className="text-sm text-primary-700 mb-3">NAV: {formatCurrency(p.navPrice)}</div>
+                <Button size="sm" className="bg-primary-700 hover:bg-primary-800" onClick={() => openBuy(p)}>
+                  Buy
+                </Button>
+              </Card>
+            ))}
+            {products.length === 0 && (
+              <p className="text-sm text-secondary-600">No products available for your risk profile.</p>
+            )}
+          </div>
+        )}
       </Card>
 
-      {/* All Funds */}
-      <PortfolioFull />
       
-      {/* Performance Metrics */}
-      <Card className="p-5 md:p-6">
-        <h3 className="mb-4 text-primary-700">Performance Metrics</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-          <div className="text-center p-4 bg-secondary-50 rounded-lg border border-secondary-200">
-            <div className="text-foreground mb-1">+15.6%</div>
-            <div className="text-xs text-secondary-600">Best Performer</div>
-            <div className="text-xs text-secondary-500 mt-1">Sucorinvest Sharia</div>
-          </div>
-          <div className="text-center p-4 bg-secondary-50 rounded-lg border border-secondary-200">
-            <div className="text-foreground mb-1">{formatCurrency(230900)}</div>
-            <div className="text-xs text-secondary-600">Avg Fund Value</div>
-          </div>
-          <div className="text-center p-4 bg-secondary-50 rounded-lg border border-secondary-200">
-            <div className="text-foreground mb-1">7.8%</div>
-            <div className="text-xs text-secondary-600">Avg Annual Return</div>
-          </div>
-          <div className="text-center p-4 bg-secondary-50 rounded-lg border border-secondary-200">
-            <div className="text-foreground mb-1">90%</div>
-            <div className="text-xs text-secondary-600">Funds Profitable</div>
-            <div className="text-xs text-secondary-500 mt-1">9 out of 10</div>
-          </div>
-        </div>
-      </Card>
+
+      {/* Buy Dialog (using ui/dialog) */}
+      <Dialog open={showBuy && Boolean(selected)} onOpenChange={(open) => !open && setShowBuy(false)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Buy Product</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm text-foreground font-medium">{selected.productName}</div>
+                <div className="text-xs text-secondary-600">{selected.productType}</div>
+                <div className="text-xs text-secondary-600 mt-1">NAV: {formatCurrency(selected.navPrice)}</div>
+                <div className="text-xs text-secondary-600 mt-1">Cutoff: {selected.cutOffTime}</div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="goalId">Goal Name</Label>
+                <Input id="goalId" type="text" placeholder="e.g., 02c2b13c-..." value={goalId} onChange={(e) => setGoalId(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
+                <Input id="amount" type="number" min={0} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+                {!withinTradingHours() && (
+                  <p className="text-xs text-destructive">Pembelian hanya 09:00 - 16:00</p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBuy(false)}>Cancel</Button>
+            <Button onClick={handleBuy} disabled={!withinTradingHours() || !amount || amount <= 0 || !goalId} className="bg-primary-700 hover:bg-primary-800">Buy</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

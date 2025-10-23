@@ -9,10 +9,8 @@ import {
   Clock,
   Check,
   ArrowRight,
-  Award
 } from "lucide-react";
-import logo from 'figma:asset/5be61660b702baf053a25ca30a76685e3f38b680.png';
-import { useLocation } from "react-router-dom";
+import logo from '../../assets/Logo.png';
 
 interface RiskProfileResultPageProps {
   riskProfile?: string;
@@ -21,16 +19,11 @@ interface RiskProfileResultPageProps {
 }
 
 export function RiskProfileResultPage({ riskProfile: propRiskProfile, onContinue: propOnContinue, insight: propInsight }: RiskProfileResultPageProps) {
-  const location = useLocation();
-  const { riskProfile: locationRiskProfile, insight: locationInsight } = location.state || {};
-
-  // Use props if provided, otherwise fall back to location.state
-  const riskProfile = propRiskProfile || locationRiskProfile;
-  const insight = propInsight || locationInsight;
+  const riskProfile = propRiskProfile;
+  const insight = propInsight;
 
   const onContinue = propOnContinue || (() => {
     console.log("Navigating to Dashboard...");
-    // Add navigation logic here if needed
   });
 
   const profileData = {
@@ -40,19 +33,7 @@ export function RiskProfileResultPage({ riskProfile: propRiskProfile, onContinue
       gradient: "from-blue-500 to-blue-600",
       icon: Shield,
       title: "Conservative Investor",
-      description: "You prefer stability and capital preservation over high returns. You're comfortable with lower-risk investments.",
-      characteristics: [
-        "Focus on capital preservation",
-        "Lower risk tolerance",
-        "Steady, predictable returns",
-        "Long-term stable growth"
-      ],
-      recommendations: [
-        "Government bonds and fixed deposits",
-        "Conservative mutual funds",
-        "Dividend-paying stocks",
-        "Money market funds"
-      ]
+      description: "You prefer stability and capital preservation over high returns. You're comfortable with lower-risk investments."
     },
     Moderate: {
       color: "amber-600",
@@ -60,19 +41,7 @@ export function RiskProfileResultPage({ riskProfile: propRiskProfile, onContinue
       gradient: "from-amber-500 to-amber-600",
       icon: Target,
       title: "Moderate Investor",
-      description: "You seek a balance between growth and stability. You can handle moderate market fluctuations for better returns.",
-      characteristics: [
-        "Balanced risk-reward approach",
-        "Diversified portfolio",
-        "Medium-term investment horizon",
-        "Comfortable with volatility"
-      ],
-      recommendations: [
-        "Balanced mutual funds",
-        "Mix of stocks and bonds",
-        "Index funds",
-        "Real estate investment trusts"
-      ]
+      description: "You seek a balance between growth and stability. You can handle moderate market fluctuations for better returns."
     },
     Aggressive: {
       color: "red-600",
@@ -80,19 +49,7 @@ export function RiskProfileResultPage({ riskProfile: propRiskProfile, onContinue
       gradient: "from-red-500 to-red-600",
       icon: TrendingUp,
       title: "Aggressive Investor",
-      description: "You aim for maximum returns and are willing to take on higher risk. You have a long investment horizon and can weather market volatility.",
-      characteristics: [
-        "High growth potential focus",
-        "Higher risk tolerance",
-        "Long-term investment horizon",
-        "Active portfolio management"
-      ],
-      recommendations: [
-        "Growth stocks and equity funds",
-        "Emerging market investments",
-        "High-yield bonds",
-        "Alternative investments"
-      ]
+      description: "You aim for maximum returns and are willing to take on higher risk. You have a long investment horizon and can weather market volatility."
     }
   };
 
@@ -190,91 +147,11 @@ export function RiskProfileResultPage({ riskProfile: propRiskProfile, onContinue
               >
                 <h3 className="text-3xl mb-2">{data.title}</h3>
                 <p className="text-white/90 text-sm max-w-xl mx-auto">
-                  {data.description}
+                  {insight ?? data.description}
                 </p>
               </motion.div>
             </div>
           </motion.div>
-
-          {/* Characteristics and Recommendations */}
-          <div className="grid md:grid-cols-2 gap-6 mb-6">
-            {/* Characteristics */}
-            <motion.div
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.8 }}
-            >
-              <Card className="p-5 h-full border-2">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-2 rounded-lg bg-primary-100 dark:bg-primary-900/30">
-                    <Award className="w-5 h-5 text-primary" />
-                  </div>
-                  <h4>Your Characteristics</h4>
-                </div>
-                <ul className="space-y-3">
-                  {data.characteristics.map((item, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ x: -10, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: 0.9 + index * 0.1 }}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                      <span>{item}</span>
-                    </motion.li>
-                  ))}
-                </ul>
-              </Card>
-            </motion.div>
-
-            {/* Recommendations */}
-            <motion.div
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.8 }}
-            >
-              <Card className="p-5 h-full border-2">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-2 rounded-lg bg-accent-100 dark:bg-accent-900/30">
-                    <AlertCircle className="w-5 h-5 text-accent" />
-                  </div>
-                  <h4>Recommended Investments</h4>
-                </div>
-                <ul className="space-y-3">
-                  {data.recommendations.map((item, index) => (
-                    <motion.li
-                      key={index}
-                      initial={{ x: 10, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: 0.9 + index * 0.1 }}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <TrendingUp className="w-4 h-4 text-accent mt-0.5 flex-shrink-0" />
-                      <span>{item}</span>
-                    </motion.li>
-                  ))}
-                </ul>
-              </Card>
-            </motion.div>
-          </div>
-
-          {/* Insight Section */}
-          {insight && (
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 1.2 }}
-              className="mb-6"
-            >
-              <Card className="p-4 bg-accent-50/50 dark:bg-accent-900/20 border-accent/30">
-                <div className="text-sm">
-                  <h4 className="text-accent mb-2">Additional Insights</h4>
-                  <p className="text-muted-foreground">{insight}</p>
-                </div>
-              </Card>
-            </motion.div>
-          )}
 
           {/* Information Banner */}
           <motion.div
