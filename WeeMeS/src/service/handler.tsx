@@ -1,5 +1,42 @@
 // Centralized API handlers for WeeMeS
-// Endpoints used across pages: auth, KYC, CRP validate/save
+
+/*
+Handler summary by function and endpoint (ordered)
+
+1) AUTH
+   - login — POST /v1/auth/login
+   - register — POST /v1/auth/register
+   - changePassword — POST /v1/auth/change-password
+
+2) KYC & CRP
+   - saveKYC — POST /v1/kyc
+   - validateCRPAnswers — POST /v1/crp/answers/validate
+   - saveCRPAnswers — POST /v1/crp/answers/save
+
+3) Goals: create/edit/simulate
+   - createRetirementGoal — POST /v1/goals/createdGoalsRetirement
+   - createOtherGoal — POST /v1/goals/createdGoalsOther
+   - editRetirementGoal — PUT /v1/goals/editGoalsRetirement/{goalId}
+   - editOtherGoal — PUT /v1/goals/editGoalsOther/{goalId}
+   - simulateRetirementGoal — POST /v1/goals/simulateCreatedGoalsRetirement
+   - simulateOtherGoal — POST /v1/goals/simulateCreatedGoalsOther
+
+4) Goals: list/detail/tracking
+   - fetchGoalsList — GET /v1/goals/listGoals
+   - fetchGoalDetail — GET /v1/goals/detailGoals/{goalId}
+   - fetchGoalsTracking — GET /v1/goals/trackingGoals (fallback: /v1/goals//trackingGoals)
+
+5) Products
+   - fetchProductsByRisk — GET /v1/products/show-product/{risk}
+
+6) Transactions
+   - buyProduct — POST /v1/transaction/buy
+   - fetchTransactionHistory — GET /v1/transaction/history/{customerId}
+
+7) Dashboard
+   - fetchDashboardSummary — GET /v1/dashboard/summary?customerId={id}
+   - fetchDashboardTrend — GET /v1/dashboard/trend?customerId={id}&days={n}
+*/
 
 // Vite exposes env via import.meta.env
 const BASE_URL: string = (import.meta as any)?.env?.VITE_API_URL ?? 'http://localhost:8080';
@@ -23,6 +60,7 @@ export interface ApiResponse<T> {
   errors?: string[];
   messageCodes?: string[];
 }
+
 
 async function fetchJson<T>(path: string, init?: RequestInit, authToken?: string): Promise<ApiResponse<T>> {
   const base = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -59,6 +97,16 @@ export async function register(input: { name: string; email: string; password: s
       address: input.address,
     }),
   });
+}
+
+// Auth: change password (gateway)
+export async function changePassword(userId: string, body: { currentPassword: string; newPassword: string; confirmNewPassword: string }, token?: string) {
+  const path = `/v1/auth/change-password`;
+  return fetchJson<unknown>(path, {
+    method: 'POST',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(body),
+  }, token);
 }
 
 export interface KYCPayload { nik: string; pob: string; dob: string; }
@@ -116,59 +164,7 @@ export function normalizeRisk(name?: string | null): RiskProfile {
   return ['Conservative', 'Moderate', 'Aggressive'].includes(name) ? (name as RiskProfile) : null;
 }
 
-// Products by risk profile (8086 service)
-export interface ProductItem {
-  productId: string;
-  productName: string;
-  productType: string;
-  navPrice: number;
-  cutOffTime: string; 
-  productTypeId: string;
-  updatedAt: string;
-}
-
-export async function fetchProductsByRisk(risk: Exclude<RiskProfile, null>, token?: string) {
-  const path = `/v1/products/show-product/${encodeURIComponent(risk)}`;
-  return fetchJson<ProductItem[]>(path, { method: 'GET' }, token);
-}
-
-// Buy transaction (8086 service)
-export interface BuyRequest {
-  customerId: string;
-  productId: string;
-  goalId: string; // temporary dummy
-  amount: number; // in currency units
-}
-
-export interface BuyResponse {
-  transactionId?: string;
-}
-
-export async function buyProduct(req: BuyRequest, token?: string) {
-  const path = `/v1/transaction/buy`;
-  return fetchJson<BuyResponse>(path, {
-    method: 'POST',
-    body: JSON.stringify(req),
-  }, token);
-}
-
-// Transaction history (gateway)
-export interface TransactionHistoryItem {
-  transactionId?: string;
-  date?: string; // ISO or YYYY-MM-DD
-  type?: 'buy' | 'sell' | string;
-  productName?: string;
-  amount?: number; // IDR
-  units?: number; // up to 6 decimals
-  navPrice?: number;
-  platform?: string;
-  status?: 'pending' | 'settled' | 'rejected' | string;
-}
-
-export async function fetchTransactionHistory(customerId: string, token?: string) {
-  const path = `/v1/transaction/history/${encodeURIComponent(customerId)}`;
-  return fetchJson<TransactionHistoryItem[]>(path, { method: 'GET' }, token);
-}
+// [moved] Products and Transactions sections relocated below Goals tracking
 
 // Goals APIs
 export interface CreateRetirementGoalReq {
@@ -198,6 +194,58 @@ export async function createRetirementGoal(userId: string, req: CreateRetirement
 export async function createOtherGoal(userId: string, req: CreateOtherGoalReq, token?: string) {
   const path = `/v1/goals/createdGoalsOther`;
   return fetchJson<any>(path, {
+    method: 'POST',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(req),
+  }, token);
+}
+
+// Edit Goals APIs
+export interface EditOtherGoalReq { targetYear: number; targetAmount: number }
+export interface EditRetirementGoalReq { targetAge: number; hopeLife: number; monthlyExpense: number }
+
+export async function editOtherGoal(userId: string, goalId: string, req: EditOtherGoalReq, token?: string) {
+  const path = `/v1/goals/editGoalsOther/${encodeURIComponent(goalId)}`;
+  return fetchJson<any>(path, {
+    method: 'PUT',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(req),
+  }, token);
+}
+
+export async function editRetirementGoal(userId: string, goalId: string, req: EditRetirementGoalReq, token?: string) {
+  const path = `/v1/goals/editGoalsRetirement/${encodeURIComponent(goalId)}`;
+  return fetchJson<any>(path, {
+    method: 'PUT',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(req),
+  }, token);
+}
+
+export interface SimulationProjection { month: number; date: string; value: number; progress: number; }
+export interface SimulationResponse {
+  goalId?: string | null;
+  goalType: string;
+  goalName: string;
+  targetAge?: number;
+  targetYear?: number;
+  targetAmountNeeded?: number;
+  assumptions?: Record<string, any>;
+  projections: SimulationProjection[];
+}
+
+export async function simulateRetirementGoal(userId: string, req: CreateRetirementGoalReq, token?: string) {
+  const path = `/v1/goals/simulateCreatedGoalsRetirement`;
+  return fetchJson<SimulationResponse>(path, {
+    method: 'POST',
+    headers: { 'X-User-Id': userId },
+    body: JSON.stringify(req),
+  }, token);
+}
+
+export async function simulateOtherGoal(userId: string, req: CreateOtherGoalReq, token?: string) {
+  const path = `/v1/goals/simulateCreatedGoalsOther`;
+  return fetchJson<SimulationResponse>(path, {
     method: 'POST',
     headers: { 'X-User-Id': userId },
     body: JSON.stringify(req),
@@ -252,6 +300,59 @@ export async function fetchGoalsTracking(userId: string, token?: string) {
   return fetchJson<GoalTrackingItem[]>(`/v1/goals//trackingGoals`, { method: 'GET', headers }, token);
 }
 
+// Products by risk profile
+export interface ProductItem {
+  productId: string;
+  productName: string;
+  productType: string;
+  navPrice: number;
+  cutOffTime: string; 
+  productTypeId: string;
+  updatedAt: string;
+}
+
+export async function fetchProductsByRisk(risk: Exclude<RiskProfile, null>, token?: string) {
+  const path = `/v1/products/show-product/${encodeURIComponent(risk)}`;
+  return fetchJson<ProductItem[]>(path, { method: 'GET' }, token);
+}
+
+// Buy transaction
+export interface BuyRequest {
+  customerId: string;
+  productId: string;
+  goalId: string; 
+  amount: number; 
+}
+export interface BuyResponse {
+  transactionId?: string;
+}
+
+export async function buyProduct(req: BuyRequest, token?: string) {
+  const path = `/v1/transaction/buy`;
+  return fetchJson<BuyResponse>(path, {
+    method: 'POST',
+    body: JSON.stringify(req),
+  }, token);
+}
+
+// Transaction history (gateway)
+export interface TransactionHistoryItem {
+  transactionId?: string;
+  date?: string; // ISO or YYYY-MM-DD
+  type?: 'buy' | 'sell' | string;
+  productName?: string;
+  amount?: number; // IDR
+  units?: number; // up to 6 decimals
+  navPrice?: number;
+  platform?: string;
+  status?: 'pending' | 'settled' | 'rejected' | string;
+}
+
+export async function fetchTransactionHistory(customerId: string, token?: string) {
+  const path = `/v1/transaction/history/${encodeURIComponent(customerId)}`;
+  return fetchJson<TransactionHistoryItem[]>(path, { method: 'GET' }, token);
+}
+
 // Dashboard APIs (gateway)
 export interface DashboardSummary {
   totalValue: number;
@@ -271,56 +372,3 @@ export async function fetchDashboardTrend(customerId: string, days = 30, token?:
   return fetchJson<DashboardTrend>(path, { method: 'GET' }, token);
 }
 
-
-export interface SimulationProjection { month: number; date: string; value: number; progress: number; }
-export interface SimulationResponse {
-  goalId?: string | null;
-  goalType: string;
-  goalName: string;
-  targetAge?: number;
-  targetYear?: number;
-  targetAmountNeeded?: number;
-  assumptions?: Record<string, any>;
-  projections: SimulationProjection[];
-}
-
-async function fetchSimulate<T>(path: string, init?: RequestInit, token?: string) {
-  const base = import.meta.env.VITE_SIM_API_URL || 'http://localhost:8084';
-  const url = base + path;
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (init && (init as any).headers) Object.assign(headers as any, (init as any).headers);
-  if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(url, { ...init, headers });
-  const json = await res.json().catch(() => ({ success: false, data: null }));
-  if (!res.ok) {
-    const msg = (json?.messages || json?.errors)?.join(', ') || `Request failed: ${res.status}`;
-    throw new Error(msg);
-  }
-}
-export async function simulateRetirementGoal(userId: string, req: CreateRetirementGoalReq, token?: string) {
-  const path = `/v1/goals/simulateCreatedGoalsRetirement`;
-  return fetchJson<SimulationResponse>(path, {
-    method: 'POST',
-    headers: { 'X-User-Id': userId },
-    body: JSON.stringify(req),
-  }, token);
-}
-
-export async function simulateOtherGoal(userId: string, req: CreateOtherGoalReq, token?: string) {
-  const path = `/v1/goals/SimulateCreatedGoalsOther`;
-  return fetchJson<SimulationResponse>(path, {
-    method: 'POST',
-    headers: { 'X-User-Id': userId },
-    body: JSON.stringify(req),
-  }, token);
-}
-
-// Auth: change password (gateway)
-export async function changePassword(userId: string, body: { currentPassword: string; newPassword: string; confirmNewPassword: string }, token?: string) {
-  const path = `/v1/auth/change-password`;
-  return fetchJson<unknown>(path, {
-    method: 'POST',
-    headers: { 'X-User-Id': userId },
-    body: JSON.stringify(body),
-  }, token);
-}

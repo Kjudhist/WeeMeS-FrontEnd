@@ -19,6 +19,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
   // Load dashboard summary + trend from gateway (8080)
   useEffect(() => {
     const ud = JSON.parse(localStorage.getItem("userData") || "null");
+    // Penambahan variable get token dri local storage *edited by ivan sebagai penanda*
+    const token = localStorage.getItem('authToken') || undefined;
     const customerId: string | undefined = ud?.customerId || (import.meta as any)?.env?.VITE_DEMO_CUSTOMER_ID || '21dc1b65-2dff-4c9c-8a44-2f62e6f0e0d1';
     (async () => {
       try {
@@ -29,8 +31,8 @@ export function HomePage({ onNavigate }: HomePageProps) {
           return;
         }
         const [sum, tr] = await Promise.all([
-          fetchDashboardSummary(customerId),
-          fetchDashboardTrend(customerId, 30),
+          fetchDashboardSummary(customerId, token),           // Penambahan Token di Fetching *edited by ivan sebagai penanda*
+          fetchDashboardTrend(customerId, 30, token),         // Penambahan Token di Fetching *edited by ivan sebagai penanda*
         ]);
         if (sum?.success && sum.data) setTotalValue(Number((sum.data as any)?.totalValue ?? 0));
         else {
@@ -95,12 +97,12 @@ export function HomePage({ onNavigate }: HomePageProps) {
               )}
               {!!trend.length && (
                 <div className="mt-2 inline-flex items-center text-sm text-green-600">
-                  <TrendingUp className="w-4 h-4 mr-1" />
+                  {/* <TrendingUp className="w-4 h-4 mr-1" />
                   {(() => {
                     const first = trend[0], last = trend[trend.length - 1];
                     const pct = first ? ((last - first) / first) * 100 : 0;
                     return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% in last 30d`;
-                  })()}
+                  })()} */}
                 </div>
               )}
             </div>

@@ -5,7 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card } from "./ui/card";
 import { motion, AnimatePresence } from "motion/react";
-import { createRetirementGoal, createOtherGoal, simulateRetirementGoal, simulateOtherGoal, type SimulationResponse } from "../service/handler";
+import { createRetirementGoal, createOtherGoal, simulateRetirementGoal, simulateOtherGoal, editOtherGoal, editRetirementGoal, type SimulationResponse } from "../service/handler";
 import { toast } from "sonner";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -63,11 +63,12 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
       setInitialInvestment(editGoal.current?.toString() || '');
       
       // Determine if it's a retirement goal
-      if (editGoal.retirementDetails) {
+      const typeHint = String(editGoal.goalType || editGoal.category || '').toLowerCase();
+      if (editGoal.retirementDetails || typeHint === 'retirement') {
         setGoalType('retirement');
         setStep('form');
-        setLifeExpectancy(editGoal.retirementDetails.yearsAfterRetirement?.toString() || '');
-        setMonthlyNeeds(editGoal.retirementDetails.monthlyNeeds?.toString() || '');
+        setLifeExpectancy(editGoal.retirementDetails?.yearsAfterRetirement?.toString() || '');
+        setMonthlyNeeds(editGoal.retirementDetails?.monthlyNeeds?.toString() || '');
       } else {
         setGoalType('other');
         setStep('form');
@@ -78,6 +79,8 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
       resetForm();
     }
   }, [editGoal, open]);
+
+  const isNumberValid = (n: any) => typeof n === 'number' && !Number.isNaN(n) && Number.isFinite(n);
 
   const resetForm = () => {
     setStep('type');
@@ -105,7 +108,10 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
       setStep('form');
       setGoalName('Retirement Fund');
     } else {
-      setStep('category');
+      // Only allow custom category for 'other' goals: skip category step
+      setCategory('custom');
+      setGoalName('');
+      setStep('form');
     }
   };
 
@@ -134,6 +140,83 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
         toast.error('User ID not found. Please login again.');
         return;
       }
+      // Penambahan variable get token dri local storage *edited by ivan sebagai penanda*
+      const token = localStorage.getItem('authToken') || undefined;
+
+      // Edit mode: call edit endpoints directly
+      if (isEditMode) {
+        if (goalType === 'retirement') {
+          const targetageNum = parseInt(targetYear);
+          const hopeLifeNum = parseInt(lifeExpectancy);
+          const monthlyExpenseNum = parseFloat(monthlyNeeds);
+          if (!isNumberValid(targetageNum) || targetageNum < 1 || targetageNum > 80) {
+            toast.error('Please enter a valid Target Age (1-80).');
+            return;
+          }
+          if (!isNumberValid(hopeLifeNum) || hopeLifeNum < 1 || hopeLifeNum > 60) {
+            toast.error('Please enter a valid Expected Retirement Duration (1-60).');
+            return;
+          }
+          if (!isNumberValid(monthlyExpenseNum) || monthlyExpenseNum <= 0) {
+            toast.error('Please enter a valid Monthly Expense (> 0).');
+            return;
+          }
+          const payload = {
+            targetAge: targetageNum,
+            hopeLife: hopeLifeNum,
+            monthlyExpense: monthlyExpenseNum,
+          };
+          const resp = await editRetirementGoal(userId, editGoal.id, payload, token);
+          if (resp.success) {
+            toast.success('Retirement goal updated');
+            onEditGoal?.({
+              id: editGoal.id,
+              title: goalName,
+              deadline: targetYear,
+              target: monthlyExpenseNum * (hopeLifeNum * 12),
+              category: 'RETIREMENT',
+              retirementDetails: {
+                yearsAfterRetirement: hopeLifeNum,
+                monthlyNeeds: monthlyExpenseNum,
+                retirementYear: targetageNum
+              }
+            });
+            handleClose();
+          } else {
+            toast.error(resp.messages?.join(', ') || 'Failed to update retirement goal');
+          }
+        } else {
+          const targetYearNum = parseInt(targetYear);
+          const targetAmountNum = parseFloat(targetAmount);
+          if (!isNumberValid(targetYearNum) || targetYearNum < new Date().getFullYear()) {
+            toast.error('Please enter a valid Target Year (>= current year).');
+            return;
+          }
+          if (!isNumberValid(targetAmountNum) || targetAmountNum <= 0) {
+            toast.error('Please enter a valid Target Amount (> 0).');
+            return;
+          }
+          const payload = {
+            targetYear: targetYearNum,
+            targetAmount: targetAmountNum,
+          };
+          const resp = await editOtherGoal(userId, editGoal.id, payload, token);
+          if (resp.success) {
+            toast.success('Goal updated');
+            onEditGoal?.({
+              id: editGoal.id,
+              title: goalName,
+              deadline: String(targetYearNum),
+              target: targetAmountNum,
+              category: 'OTHER'
+            });
+            handleClose();
+          } else {
+            toast.error(resp.messages?.join(', ') || 'Failed to update goal');
+          }
+        }
+        return;
+      }
 
       // If there's no simulation yet, run simulation first
       if (!simData) {
@@ -148,7 +231,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
               hopeLife: parseInt(lifeExpectancy),
               monthlyExpense: parseFloat(monthlyNeeds),
             };
-            const resp = await simulateRetirementGoal(userId, payload);
+            const resp = await simulateRetirementGoal(userId, payload, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
             if (resp.success) {
               setSimData(resp.data);
               toast.success('Simulation generated');
@@ -163,7 +246,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
               targetYear: parseInt(targetYear),
               targetAmount: parseFloat(targetAmount),
             };
-            const resp = await simulateOtherGoal(userId, payload);
+            const resp = await simulateOtherGoal(userId, payload, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
             if (resp.success) {
               setSimData(resp.data);
               toast.success('Simulation generated');
@@ -191,7 +274,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
           hopeLife: parseInt(lifeExpectancy),
           monthlyExpense: parseFloat(monthlyNeeds),
         };
-        const resp = await createRetirementGoal(userId, payload);
+        const resp = await createRetirementGoal(userId, payload, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
         if (resp.success) {
           toast.success('Retirement goal created');
           // Update UI list optimistically
@@ -220,7 +303,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
           targetYear: parseInt(targetYear),
           targetAmount: parseFloat(targetAmount),
         };
-        const resp = await createOtherGoal(userId, payload);
+        const resp = await createOtherGoal(userId, payload, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
         if (resp.success) {
           toast.success('Goal created');
           onAddGoal?.({
@@ -261,7 +344,8 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
                 size="sm"
                 onClick={() => {
                   if (step === 'form') {
-                    setStep(goalType === 'retirement' ? 'type' : 'category');
+                    // For 'other' we no longer show category step
+                    setStep('type');
                   } else if (step === 'category') {
                     setStep('type');
                   }
@@ -591,7 +675,7 @@ export function AddGoalDialog({ open, onOpenChange, onAddGoal, editGoal, onEditG
                     className="flex-1 gap-2"
                   >
                     <Target className="w-4 h-4" />
-                    {simData ? (isEditMode ? 'Update Goal' : 'Save Goal') : 'Simulate'}
+                    {isEditMode ? 'Update Goal' : (simData ? 'Save Goal' : 'Simulate')}
                   </Button>
                   {simData && (
                     <Button type="button" variant="ghost" className="flex-1" onClick={() => { setSimData(null); setSimError(null); }}>

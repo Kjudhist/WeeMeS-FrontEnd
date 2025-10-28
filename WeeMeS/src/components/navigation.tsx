@@ -11,7 +11,7 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
   const navItems = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'goals', label: 'Goals', icon: Target },
-    { id: 'portfolio', label: 'Portfolio', icon: Building },
+    { id: 'portfolio', label: 'Product', icon: Building },
     { id: 'history', label: 'History', icon: ArrowLeftRight },
     { id: 'profile', label: 'Profile', icon: User },
   ];
@@ -81,8 +81,8 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-1/2 transform -translate-x-1/2 max-w-md w-full bg-card/95 backdrop-blur-lg border-t border-border/50 shadow-2xl overflow-x-auto">
-        <div className="flex items-center justify-start min-w-max py-2 px-2 gap-1">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 w-full bg-card/95 backdrop-blur-lg border-t border-border/50 shadow-2xl pb-[env(safe-area-inset-bottom)]">
+        <div className="flex w-full items-stretch justify-between py-2 px-2">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentPage === item.id;
@@ -91,7 +91,7 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
               <motion.button
                 key={item.id}
                 onClick={() => onPageChange(item.id)}
-                className="relative flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-300 flex-shrink-0"
+                className="relative flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all duration-300"
                 whileTap={{ scale: 0.9 }}
               >
                 <motion.div

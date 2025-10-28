@@ -3,7 +3,7 @@ import { AddGoalDialog } from "../add-goal-dialog";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Plus, Target, TrendingUp, Lightbulb, Calculator } from "lucide-react";
+import { Plus, Target, Lightbulb, Calculator } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { fetchGoalsList, fetchGoalDetail, type GoalsListItem, fetchGoalsTracking, type GoalTrackingItem } from "../../service/handler";
@@ -28,15 +28,21 @@ export function GoalsPageEnhanced() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<GoalsListItem | null>(null);
   const [trackingList, setTrackingList] = useState<GoalTrackingItem[]>([]);
+  const [editGoalData, setEditGoalData] = useState<any | null>(null);
 
+  useEffect(()=> {
+
+  })
   useEffect(() => {
     const ud = JSON.parse(localStorage.getItem('userData') || 'null');
+    // Penambahan variable get token dri local storage *edited by ivan sebagai penanda*
+    const token = localStorage.getItem('authToken') || undefined;
     const userId: string | undefined = ud?.customerId;
     if (!userId) return;
     (async () => {
       try {
         // Prefer tracking endpoint to get progress
-        const tracking = await fetchGoalsTracking(userId);
+        const tracking = await fetchGoalsTracking(userId, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
         if (tracking.success && Array.isArray(tracking.data)) {
           const mapped: Goal[] = (tracking.data as GoalTrackingItem[]).map((t) => {
             const year = parseInt(t.targetDate?.slice(0, 4) || '0');
@@ -56,7 +62,7 @@ export function GoalsPageEnhanced() {
           setTrackingList(tracking.data as GoalTrackingItem[]);
         } else {
           // Fallback to listGoals if tracking not available
-          const resp = await fetchGoalsList(userId);
+          const resp = await fetchGoalsList(userId, token); // Penambahan Token di Fetching *edited by ivan sebagai penanda*
           if (resp.success && Array.isArray(resp.data)) {
             const mapped: Goal[] = (resp.data as GoalsListItem[]).map((g) => {
               const year = parseInt(g.targetDate?.slice(0, 4) || '0');
@@ -83,24 +89,7 @@ export function GoalsPageEnhanced() {
       }
     })();
   }, []);
-
-  const selectedGoal = selectedGoalForInsights 
-    ? goals.find(g => g.id === selectedGoalForInsights) 
-    : goals[0]; // Default to first goal
-
-  const handleApplyWhatIfChanges = (goalId: string, newContribution: number) => {
-    setGoals(prevGoals => 
-      prevGoals.map(g => 
-        g.id === goalId 
-          ? { ...g, monthlyContribution: newContribution }
-          : g
-      )
-    );
-    toast.success('Contribution updated!', {
-      description: `Monthly contribution adjusted based on simulation.`
-    });
-  };
-
+  
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -152,7 +141,7 @@ export function GoalsPageEnhanced() {
         ) : (
           <div className="grid gap-6">
             {goals.map((goal, index) => {
-              const progress = (goal.currentAmount / goal.targetAmount) * 100;
+              const progress = goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0;
               const remaining = goal.targetAmount - goal.currentAmount;
               const monthsRemaining = (goal.targetYear - new Date().getFullYear()) * 12 + 
                 (goal.targetMonth - (new Date().getMonth() + 1));
@@ -174,9 +163,11 @@ export function GoalsPageEnhanced() {
                       const ud = JSON.parse(localStorage.getItem('userData') || 'null');
                       const userId: string | undefined = ud?.customerId;
                       if (!userId) return;
+                      // Penambahan variable get token dri local storage *edited by ivan sebagai penanda*
+                      const token = localStorage.getItem('authToken') || undefined;
                       setDetailLoading(true);
                       setDetailOpen(true);
-                      const detail = await fetchGoalDetail(userId, goal.id);
+                      const detail = await fetchGoalDetail(userId, goal.id, token);  // Penambahan Token di Fetching *edited by ivan sebagai penanda*
                       if (detail.success) {
                         setDetailData(detail.data as any);
                       } else {
@@ -198,7 +189,7 @@ export function GoalsPageEnhanced() {
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-primary-700">{progress.toFixed(1)}%</div>
-                        <div className="text-[11px] text-secondary-500">Complete</div>
+                        <div className="text-[11px] text-secondary-500">{progress >= 100 ? 'Complete' : 'In Progress'}</div>
                       </div>
                     </div>
 
@@ -291,9 +282,31 @@ export function GoalsPageEnhanced() {
                   <div className="text-sm text-secondary-600">Goal Name</div>
                   <div className="text-base font-medium text-foreground">{detailData.goalName}</div>
                 </div>
-                <Badge variant="outline" className="text-xs border-primary/30 text-primary">
-                  {detailData.goalType}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                    {String(detailData.goalType || '').toUpperCase()}
+                  </Badge>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => {
+                      const year = parseInt(detailData.targetDate?.slice(0,4) || '');
+                      setEditGoalData({
+                        id: detailData.goalId,
+                        title: detailData.goalName,
+                        deadline: isNaN(year) ? '' : String(year),
+                        current: 0,
+                        target: detailData.targetAmount,
+                        category: String(detailData.goalType || '').toUpperCase(),
+                        goalType: String(detailData.goalType || '').toUpperCase()
+                      });
+                      setDetailOpen(false);
+                      setShowAddGoal(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </div>
               </div>
 
               {/* Status from tracking */}
@@ -354,7 +367,18 @@ export function GoalsPageEnhanced() {
       {/* Add Goal Dialog */}
       <AddGoalDialog 
         open={showAddGoal} 
-        onOpenChange={(open) => setShowAddGoal(open)}
+        onOpenChange={(open) => { setShowAddGoal(open); if (!open) setEditGoalData(null); }}
+        editGoal={editGoalData || undefined}
+        onEditGoal={(edited: any) => {
+          setGoals((prev) => prev.map(g => g.id === edited.id ? {
+            ...g,
+            name: edited.title ?? g.name,
+            targetAmount: typeof edited.target === 'number' ? edited.target : g.targetAmount,
+            targetYear: edited.deadline ? parseInt(String(edited.deadline)) : g.targetYear,
+            category: String(edited.category || g.category).toUpperCase()
+          } : g));
+          toast.success('Goal updated');
+        }}
         onAddGoal={(goal: any) => {
           setGoals([...goals, {
             id: `${goals.length + 1}`,
@@ -364,7 +388,7 @@ export function GoalsPageEnhanced() {
             monthlyContribution: 1000000, // Default value
             targetYear: parseInt(goal.deadline),
             targetMonth: 12,
-            category: goal.category
+            category: String(goal.category || '').toUpperCase()
           }]);
           toast.success('Goal created successfully!', {
             description: `${goal.title} has been added to your goals.`

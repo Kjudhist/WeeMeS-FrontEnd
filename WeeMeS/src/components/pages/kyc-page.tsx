@@ -450,8 +450,6 @@ export function KYCPage({ onComplete }: KYCPageProps) {
             </div>
           )}
         </Card>
-
-        {/* Security note */}
       </motion.div>
     </div>
   );

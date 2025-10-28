@@ -4,8 +4,9 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../ui/select";
 import { } from "lucide-react";
-import { fetchProductsByRisk, buyProduct, type ProductItem, type RiskProfile } from "../../service/handler";
+import { fetchProductsByRisk, buyProduct, fetchGoalsList, type ProductItem, type RiskProfile, type GoalsListItem } from "../../service/handler";
 import { toast } from "sonner";
 
 export function PortfolioPage() {
@@ -16,6 +17,8 @@ export function PortfolioPage() {
   const [selected, setSelected] = useState<ProductItem | null>(null);
   const [amount, setAmount] = useState<number>(100000);
   const [goalId, setGoalId] = useState<string>("");
+  const [goals, setGoals] = useState<GoalsListItem[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(false);
 
   const riskFromLocal = (() => {
     try {
@@ -46,16 +49,9 @@ export function PortfolioPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const withinTradingHours = () => {
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const afterOpen = h > 9 || (h === 9 && m >= 0);
-    const beforeClose = h < 16; // before 16:00
-    return afterOpen && beforeClose;
-  };
+  // Trading hours verification removed: buy is always available
 
-  const openBuy = (p: ProductItem) => {
+  const openBuy = async (p: ProductItem) => {
     setSelected(p);
     setAmount(100000);
     // try prefill goalId from localStorage if exists
@@ -63,23 +59,39 @@ export function PortfolioPage() {
       const ud = JSON.parse(localStorage.getItem("userData") || "null");
       if (ud?.lastGoalId) setGoalId(ud.lastGoalId as string);
     } catch {}
+    // fetch available goals for dropdown
+    try {
+      const ud = JSON.parse(localStorage.getItem("userData") || "{}");
+      const userId: string | undefined = ud?.customerId;
+      if (userId) {
+        setGoalsLoading(true);
+        const token = localStorage.getItem("authToken") || undefined;
+        const resp = await fetchGoalsList(userId, token);
+        if (resp.success && Array.isArray(resp.data)) {
+          setGoals(resp.data);
+          // if no prefilled goalId, default to first
+          if (!ud?.lastGoalId && resp.data.length > 0) {
+            setGoalId(resp.data[0].goalId);
+          }
+        } else {
+          toast.error(resp.messages?.join(", ") || "Failed to load goals");
+        }
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load goals");
+    } finally {
+      setGoalsLoading(false);
+    }
     setShowBuy(true);
   };
 
   const handleBuy = async () => {
     if (!selected) return;
-    if (!withinTradingHours()) {
-      toast.error("Pembelian hanya bisa dilakukan antara 09:00 - 16:00");
-      return;
-    }
+    // Trading hours check removed: allow buy any time
     try {
       const token = localStorage.getItem("authToken") || undefined;
       const ud = JSON.parse(localStorage.getItem("userData") || "{}");
       const customerId = ud?.customerId || "00000000-0000-0000-0000-000000000000";
-      if (!goalId) {
-        toast.error("Mohon isi Goal ID terlebih dahulu");
-        return;
-      }
       const resp = await buyProduct({
         customerId,
         productId: selected.productId,
@@ -112,7 +124,7 @@ export function PortfolioPage() {
       <Card className="p-5 md:p-6 bg-gradient-to-r from-primary-50 to-accent-50 border-primary-200">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-primary-700">Investment Portfolio</h2>
+            <h2 className="text-primary-700">Products</h2>
             <p className="text-sm text-secondary-600">Discover and buy products</p>
           </div>
         </div>
@@ -166,21 +178,28 @@ export function PortfolioPage() {
                 <div className="text-xs text-secondary-600 mt-1">Cutoff: {selected.cutOffTime}</div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="goalId">Goal Name</Label>
-                <Input id="goalId" type="text" placeholder="e.g., 02c2b13c-..." value={goalId} onChange={(e) => setGoalId(e.target.value)} />
+                <Label htmlFor="goalId">Goal</Label>
+                <Select value={goalId} onValueChange={(v) => setGoalId(v)}>
+                  <SelectTrigger id="goalId">
+                    <SelectValue placeholder={goalsLoading ? 'Loading goals...' : 'Select a goal'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {goals.map((g) => (
+                      <SelectItem key={g.goalId} value={g.goalId}>{g.goalName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="amount">Amount</Label>
                 <Input id="amount" type="number" min={0} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
-                {!withinTradingHours() && (
-                  <p className="text-xs text-destructive">Pembelian hanya 09:00 - 16:00</p>
-                )}
+                {/* Trading hours notice removed */}
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBuy(false)}>Cancel</Button>
-            <Button onClick={handleBuy} disabled={!withinTradingHours() || !amount || amount <= 0 || !goalId} className="bg-primary-700 hover:bg-primary-800">Buy</Button>
+            <Button onClick={handleBuy} disabled={!amount || amount <= 0 || !goalId} className="bg-primary-700 hover:bg-primary-800">Buy</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

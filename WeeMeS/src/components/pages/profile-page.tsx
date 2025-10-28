@@ -36,6 +36,7 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
   const [curPwd, setCurPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
   const [confirmPwd, setConfirmPwd] = useState("");
+  const [showRetakeDialog, setShowRetakeDialog] = useState(false);
 
   const profile = useMemo(() => {
     if (userData) return userData;
@@ -47,12 +48,14 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
 
   useEffect(() => {
     const customerId: string | undefined = profile?.customerId;
+    // Penambahan variable get token dri local storage *edited by ivan sebagai penanda*
+    const token = localStorage.getItem('authToken') || undefined;
     if (!customerId) return;
     (async () => {
       try {
         const [sum, tracking] = await Promise.all([
-          fetchDashboardSummary(customerId),
-          fetchGoalsTracking(customerId),
+          fetchDashboardSummary(customerId, token), // Penambahan Token di Fetching *edited by ivan sebagai penanda*
+          fetchGoalsTracking(customerId, token), // Penambahan Token di Fetching *edited by ivan sebagai penanda*
         ]);
         if (sum?.success && sum.data) setPortfolioValue(Number((sum.data as DashboardSummary).totalValue ?? 0));
         if (tracking?.success && Array.isArray(tracking.data)) setActiveGoals((tracking.data as GoalTrackingItem[]).length);
@@ -94,9 +97,7 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
               <p className="text-xs text-muted-foreground">Member since {profile.memberSince}</p>
             )}
           </div>
-          <Button variant="outline" size="sm">
-            Edit
-          </Button>
+          <div className="hidden" />
         </div>
       </Card>
 
@@ -120,7 +121,7 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
                 {userData.riskProfile === 'Moderate' && 'You seek a balance between growth and stability. Recommended: Balanced mutual funds, mix of stocks and bonds, and index funds.'}
                 {userData.riskProfile === 'Aggressive' && 'You aim for maximum returns with higher risk tolerance. Recommended: Growth stocks, equity funds, and emerging market investments.'}
               </p>
-              <Button variant="outline" size="sm" className="h-8 text-xs">
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowRetakeDialog(true)}>
                 Retake Assessment
               </Button>
             </div>
@@ -139,14 +140,6 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
           <div className="p-3 bg-muted/50 rounded-lg text-center">
             <div className="font-semibold">{activeGoals == null ? '-' : activeGoals}</div>
             <div className="text-xs text-muted-foreground">Active Goals</div>
-          </div>
-          <div className="p-3 bg-muted/50 rounded-lg text-center">
-            <div className="font-semibold">3</div>
-            <div className="text-xs text-muted-foreground">Properties</div>
-          </div>
-          <div className="p-3 bg-muted/50 rounded-lg text-center">
-            <div className="font-semibold">2.5 yrs</div>
-            <div className="text-xs text-muted-foreground">Member Since</div>
           </div>
         </div>
       </Card>
@@ -182,7 +175,7 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
       </Card>
 
       {/* Change Password Placeholder Dialog */}
-      <AlertDialog open={showChangePwd} onOpenChange={(open) => { setShowChangePwd(open); if (!open) { setCurPwd(""); setNewPwd(""); setConfirmPwd(""); } }}>
+      <AlertDialog open={showChangePwd} onOpenChange={(open: boolean) => { setShowChangePwd(open); if (!open) { setCurPwd(""); setNewPwd(""); setConfirmPwd(""); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Change Password</AlertDialogTitle>
@@ -230,6 +223,20 @@ export function ProfilePage({ onLogout, userData }: ProfilePageProps) {
                 }
               }}
             >{changingPwd ? 'Processing...' : 'Continue'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showRetakeDialog} onOpenChange={setShowRetakeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retake Assessment</AlertDialogTitle>
+            <AlertDialogDescription>
+              Comming soon to WeeMes
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowRetakeDialog(false)}>OK</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
